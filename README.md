@@ -52,33 +52,7 @@ examples:
 
 ### linux:
 
-use the `build.sh` script:
-```
-usage: build.sh [options] [source_file]
-
-options:
-    [build modes]:
-        debug    - compile with debug symbols and sanitizers (default).
-        release  - compile with optimizations.
- 
-    [compilers]:
-        gcc      - use GNU Compiler Collection (default).
-        clang    - use Clang compiler.
- 
-notes: 
-     - argument order can be specified in any sequence.
-     - source_file can be specified with or without a file extensions.
-     - source_file defaults to "main.*"
-
-examples:
-    build.sh                          compile main.* with default settings.
-    build.sh debug                    compile main.* in debug mode with default compiler.
-    build.sh clang myfile             compile myfile with default build mode with Clang.
-    build.sh release msvc             compile main.* in release mode with gcc.
-    build.sh myfile.cpp               compile myfile.cpp with default settings
-    build.sh debug myfile.cpp clang   combine options in any order.
-```
-`build.sh` expects the main file to be in `\src` and outputs generated files to `\build`.
+not implemented yet.
 
 # directory
 - `\src`: contains all source code.

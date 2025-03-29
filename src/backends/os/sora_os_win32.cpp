@@ -3,7 +3,8 @@
 #ifndef SORA_OS_WIN32_CPP
 #define SORA_OS_WIN32_CPP
 
-//- include lib
+//- include libs
+
 #pragma comment(lib, "user32")
 #pragma comment(lib, "gdi32")
 #pragma comment(lib, "winmm")
@@ -28,7 +29,6 @@ os_init() {
 	os_state.window_first = nullptr;
 	os_state.window_last = nullptr;
 	os_state.window_free = nullptr;
-    
     
 	// time
 	timeBeginPeriod(1);
@@ -79,44 +79,17 @@ os_release() {
 
 function void
 os_update() {
-    prof_scope("os_update") {
-        
-        // clear event list
-        arena_clear(os_state.event_list_arena);
-        os_state.event_list = { 0 };
-        
-        // dispatch win32 messages
-        for (MSG message; PeekMessageA(&message, 0, 0, 0, PM_REMOVE);) {
-            TranslateMessage(&message);
-            DispatchMessageA(&message);
-        }
-        
-        // update each window
-        for (os_w32_window_t* window = os_state.window_first; window != 0; window = window->next) {
-            
-            // window size
-            RECT w32_rect = { 0 };
-            GetClientRect(window->handle, &w32_rect);
-            window->resolution = uvec2((w32_rect.right - w32_rect.left), (w32_rect.bottom - w32_rect.top));
-            
-            // mouse position
-            POINT cursor_pos;
-            GetCursorPos(&cursor_pos);
-            ScreenToClient(window->handle, &cursor_pos);
-            window->mouse_pos_last = window->mouse_pos;
-            window->mouse_pos = { (f32)cursor_pos.x, (f32)cursor_pos.y };
-            window->mouse_delta = vec2_sub(window->mouse_pos, window->mouse_pos_last);
-            
-            // time
-            window->tick_previous = window->tick_current;
-            QueryPerformanceCounter(&window->tick_current);
-            window->delta_time = (f64)(window->tick_current.QuadPart - window->tick_previous.QuadPart) / (f64)os_state.time_frequency.QuadPart;
-            window->elasped_time += window->delta_time;
-            
-            window->maximized = IsZoomed(window->handle);
-        }
-        
+    
+    // clear event list
+    arena_clear(os_state.event_list_arena);
+    os_state.event_list = { 0 };
+    
+    // dispatch win32 messages
+    for (MSG message; PeekMessageA(&message, 0, 0, 0, PM_REMOVE);) {
+        TranslateMessage(&message);
+        DispatchMessageA(&message);
     }
+    
 }
 
 function void
@@ -305,8 +278,31 @@ os_window_close(os_handle_t handle) {
 }
 
 function void
-os_window_update(os_handle_t window) {
-    // TODO: the user should update each window
+os_window_update(os_handle_t handle) {
+    
+    os_w32_window_t* window = os_w32_window_from_handle(handle);
+    
+    // window size
+    RECT w32_rect = { 0 };
+    GetClientRect(window->handle, &w32_rect);
+    window->resolution = uvec2((w32_rect.right - w32_rect.left), (w32_rect.bottom - w32_rect.top));
+    
+    // mouse position
+    POINT cursor_pos;
+    GetCursorPos(&cursor_pos);
+    ScreenToClient(window->handle, &cursor_pos);
+    window->mouse_pos_last = window->mouse_pos;
+    window->mouse_pos = { (f32)cursor_pos.x, (f32)cursor_pos.y };
+    window->mouse_delta = vec2_sub(window->mouse_pos, window->mouse_pos_last);
+    
+    // time
+    window->tick_previous = window->tick_current;
+    QueryPerformanceCounter(&window->tick_current);
+    window->delta_time = (f64)(window->tick_current.QuadPart - window->tick_previous.QuadPart) / (f64)os_state.time_frequency.QuadPart;
+    window->elasped_time += window->delta_time;
+    
+    window->maximized = IsZoomed(window->handle);
+    
 }
 
 function void 

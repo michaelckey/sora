@@ -46,6 +46,9 @@ app_frame() {
 	os_update();
 	gfx_update();
     
+    // update window
+    os_window_update(window);
+    
 	// hotkeys
 	if (os_key_press(window, os_key_F11)) {
 		os_window_fullscreen(window);

@@ -1,18 +1,18 @@
-// ui_core.h
+// sora_ui_core.h
 
-#ifndef UI_CORE_H
-#define UI_CORE_H
+#ifndef SORA_UI_CORE_H
+#define SORA_UI_CORE_H
 
 // TODO:
 //
+// [x] - font alignment.
+// [ ] - hover cursor.
 // [ ] - more events
 //    [ ] - typing.
 //    [ ] - scrolling.
 //    [ ] - key bindings.
-// [ ] - animation sizing.
-// [ ] - hover cursor.
-// [ ] - font alignment.
 // [ ] - navigation.
+// [ ] - animation sizing.
 // 
 
 //- defines 
@@ -34,6 +34,7 @@ ui_stack(padding_x, f32, 0.0f)\
 ui_stack(padding_y, f32, 0.0f)\
 ui_stack(layout_dir, ui_dir, ui_dir_down)\
 ui_stack(text_alignment, ui_text_alignment, ui_text_alignment_left)\
+ui_stack(hover_cursor, os_cursor, os_cursor_null)\
 ui_stack(rounding_00, f32, 4.0f)\
 ui_stack(rounding_01, f32, 4.0f)\
 ui_stack(rounding_10, f32, 4.0f)\
@@ -631,6 +632,11 @@ function ui_text_alignment ui_push_text_alignment(ui_text_alignment v);
 function ui_text_alignment ui_pop_text_alignment();
 function ui_text_alignment ui_set_next_text_alignment(ui_text_alignment v);
 
+function os_cursor ui_top_hover_cursor();
+function os_cursor ui_push_hover_cursor(os_cursor v);
+function os_cursor ui_pop_hover_cursor();
+function os_cursor ui_set_next_hover_cursor(os_cursor v);
+
 function f32 ui_top_rounding_00();
 function f32 ui_push_rounding_00(f32 v);
 function f32 ui_pop_rounding_00();
@@ -704,5 +710,4 @@ function void ui_push_rounding(vec4_t rounding);
 function void ui_pop_rounding();
 function void ui_set_next_rounding(vec4_t rounding);
 
-
-#endif // UI_CORE_H
+#endif // SORA_UI_CORE_H

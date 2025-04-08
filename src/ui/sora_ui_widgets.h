@@ -1,7 +1,7 @@
-// ui_widgets.h
+// sora_ui_widgets.h
 
-#ifndef UI_WIDGETS_H
-#define UI_WIDGETS_H
+#ifndef SORA_UI_WIDGETS_H
+#define SORA_UI_WIDGETS_H
 
 //- functions 
 
@@ -14,4 +14,4 @@ function ui_interaction ui_button(str_t string);
 function ui_interaction ui_buttonf(char* fmt, ...);
 
 
-#endif // UI_WIDGETS_H
+#endif // SORA_UI_WIDGETS_H

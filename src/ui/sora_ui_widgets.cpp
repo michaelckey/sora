@@ -1,7 +1,7 @@
-// ui_widgets.cpp
+// sora_ui_widgets.cpp
 
-#ifndef UI_WIDGETS_CPP
-#define UI_WIDGETS_CPP
+#ifndef SORA_UI_WIDGETS_CPP
+#define SORA_UI_WIDGETS_CPP
 
 //- implementation 
 
@@ -73,4 +73,4 @@ ui_buttonf(char* fmt, ...) {
 }
 
 
-#endif // UI_WIDGETS_CPP
+#endif // SORA_UI_WIDGETS_CPP

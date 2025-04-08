@@ -1,7 +1,7 @@
-// ui_core.cpp
+// sora_ui_core.cpp
 
-#ifndef UI_CORE_CPP
-#define UI_CORE_CPP
+#ifndef SORA_UI_CORE_CPP
+#define SORA_UI_CORE_CPP
 
 //~ implementation
 
@@ -230,7 +230,17 @@ ui_end(ui_context_t* context) {
     
     
     // hover cursor
-    // TODO: hover cursor
+    ui_node_t* hovered_node = ui_node_find(context->key_hovered);
+    ui_node_t* active_node = ui_node_find(context->key_active[os_mouse_button_left]);
+    ui_node_t* node = active_node == nullptr ? hovered_node : active_node; 
+    
+    if (node != nullptr) {
+        os_cursor cursor = node->hover_cursor;
+        if (cursor != os_cursor_null) {
+            os_set_cursor(cursor);
+        }
+        
+    }
     
     context->build_index++;
     arena_clear(ui_build_arena());
@@ -348,7 +358,7 @@ ui_size_pixels(f32 pixels, f32 strictness) {
 
 inlnfunc ui_size_t 
 ui_size_percent(f32 percent) {
-    return { ui_size_type_percent, percent, 1.0f };
+    return { ui_size_type_percent, percent, 0.0f };
 }
 
 inlnfunc ui_size_t 
@@ -599,6 +609,7 @@ ui_node_from_key(ui_node_flags flags, ui_key_t key) {
     node->padding.y = ui_top_padding_y();
     node->layout_dir = ui_top_layout_dir();
     node->text_alignment = ui_top_text_alignment();
+    node->hover_cursor = ui_top_hover_cursor();
     node->rounding.x = ui_top_rounding_00();
     node->rounding.y = ui_top_rounding_01();
     node->rounding.z = ui_top_rounding_10();
@@ -679,7 +690,8 @@ ui_layout_solve_independent(ui_node_t* node, ui_axis axis) {
         
         case ui_size_type_by_text: {
             f32 padding = node->size_wanted[axis].value;
-            // TODO: implement me
+            vec2_t text_size = ui_text_size(node->font, node->font_size, node->label);
+            node->size[axis] = padding + text_size[axis] + 8.0f;
             break;
         }
         
@@ -783,12 +795,13 @@ ui_layout_solve_violations(ui_node_t* node, ui_axis axis) {
     ui_axis layout_axis = ui_axis_from_dir(node->layout_dir);
     ui_side layout_side = ui_side_from_dir(node->layout_dir);
     
+    f32 node_size = node->size[axis] - (node->padding[axis] * 2.0f);
+    
     if (axis != layout_axis && !(node->flags & (ui_flag_overflow_x << axis))) {
-        f32 allowed_size = node->size[axis];
         for (ui_node_t* child = node->tree_first; child != nullptr; child = child->tree_next) {
             if (!(child->flags & (ui_flag_fixed_pos_x << axis))) {
                 f32 child_size = child->size[axis];
-                f32 violation = child_size - allowed_size;
+                f32 violation = child_size - node_size;
                 f32 fixup = clamp(violation, 0.0f, child_size);
                 if (fixup > 0.0f) {
                     child->size[axis] -= fixup;
@@ -799,7 +812,7 @@ ui_layout_solve_violations(ui_node_t* node, ui_axis axis) {
     
     if (axis == layout_axis && !(node->flags & (ui_flag_overflow_x << axis))) {
         
-        f32 total_allowed_size = node->size[axis];
+        f32 total_allowed_size = node_size;
         f32 total_size = 0.0f;
         f32 total_weighted_size = 0.0f;
         u32 child_count = 0;
@@ -1152,6 +1165,11 @@ function ui_text_alignment ui_push_text_alignment(ui_text_alignment v) { ui_stac
 function ui_text_alignment ui_pop_text_alignment() { ui_stack_pop_impl(text_alignment, ui_text_alignment, 0) }
 function ui_text_alignment ui_set_next_text_alignment(ui_text_alignment v) { ui_stack_set_next_impl(text_alignment, ui_text_alignment) }
 
+function os_cursor ui_top_hover_cursor() { ui_stack_top_impl(hover_cursor, os_cursor) }
+function os_cursor ui_push_hover_cursor(os_cursor v) { ui_stack_push_impl(hover_cursor, os_cursor) }
+function os_cursor ui_pop_hover_cursor() { ui_stack_pop_impl(hover_cursor, os_cursor, (os_cursor)0) }
+function os_cursor ui_set_next_hover_cursor(os_cursor v) { ui_stack_set_next_impl(hover_cursor, os_cursor) }
+
 function f32 ui_top_rounding_00() { ui_stack_top_impl(rounding_00, f32) }
 function f32 ui_push_rounding_00(f32 v) { ui_stack_push_impl(rounding_00, f32) }
 function f32 ui_pop_rounding_00() { ui_stack_pop_impl(rounding_00, f32, 0.0f) }
@@ -1448,5 +1466,4 @@ ui_set_next_rounding(vec4_t rounding) {
     ui_set_next_rounding_11(rounding.w);
 }
 
-
-#endif // UI_CORE_CPP
+#endif // SORA_UI_CORE_CPP

@@ -2,14 +2,11 @@
 
 //- includes
 
-#include "../sora/src/sora_inc.h"
-#include "../sora/src/sora_inc.cpp"
+#include "core/sora_inc.h"
+#include "core/sora_inc.cpp"
 
-#include "ui_core.h"
-#include "ui_widgets.h"
-
-#include "ui_core.cpp"
-#include "ui_widgets.cpp"
+#include "ui/sora_ui_inc.h"
+#include "ui/sora_ui_inc.cpp"
 
 //- structs 
 
@@ -78,7 +75,7 @@ app_init() {
     list.last = nullptr;
     
     for (i32 i = 0; i < 15; i++) {
-        str_t string = str_format(arena, " item %u", i);
+        str_t string = str_format(arena, " Item %u", i);
         list_item_add(arena, &list, string);
     }
     
@@ -102,7 +99,9 @@ app_frame() {
     
 	// update layers
 	os_update();
+    os_window_update(window);
 	gfx_update();
+    
     
 	// hotkeys
 	if (os_key_press(window, os_key_F11)) {
@@ -123,9 +122,8 @@ app_frame() {
         ui_begin(ui);
         ui_push_font(font);
         ui_push_font_size(10.0f);
-        ui_push_size(ui_size_percent(0.25f), ui_size_pixels(25.0f));
+        ui_push_size(ui_size_pixels(150.0f), ui_size_pixels(25.0f));
         vec2_t mouse_pos = os_window_get_cursor_pos(window);
-        
         
         //- list 
         b8 dragged_this_frame = false;
@@ -137,9 +135,10 @@ app_frame() {
                 ui_flag_mouse_interactable |
                 ui_flag_draw_background | 
                 ui_flag_draw_border | 
-                ui_flag_anim_pos_y |
-                ui_flag_draw_text;
+                ui_flag_draw_text |
+                ui_flag_anim_pos_y;
             
+            ui_set_next_hover_cursor(os_cursor_hand_point);
             item->node = ui_node_from_string(node_flags, item->label);
             ui_interaction interaction = ui_interaction_from_node(item->node);
             
@@ -216,6 +215,56 @@ app_frame() {
         ui_pop_size();
         ui_pop_font();
         ui_pop_font_size();
+        
+        
+        
+        //- table 
+        
+        temp_t scratch = scratch_begin();
+        
+        ui_set_next_rect(rect(400.0f, 150.0f, 700.0f, 450.0f));
+        ui_set_next_layout_dir(ui_dir_right);
+        ui_node_t* container = ui_node_from_key(ui_flag_draw_background, { 0 });
+        
+        ui_push_parent(container);
+        
+        ui_push_size(ui_size_percent(1.0f), ui_size_percent(1.0f));
+        
+        for (i32 i = 0; i < 5; i++) {
+            
+            ui_set_next_layout_dir(ui_dir_down);
+            ui_node_t* row = ui_node_from_key(ui_flag_draw_border, { 0 });
+            ui_push_parent(row);
+            
+            for (i32 j = 0; j < 5; j ++) {
+                /*ui_node_flags node_flags = 
+                    ui_flag_mouse_interactable |
+                    ui_flag_draw_background | 
+                    ui_flag_draw_border | 
+                    ui_flag_draw_text;
+                
+                ui_set_next_text_alignment(ui_text_alignment_center);
+                ui_node_t* item = ui_node_from_string(node_flags, str_format(scratch.arena, "%i, %i", i, j));
+                ui_interaction interaction = ui_interaction_from_node(item);*/
+                
+                ui_node_t* item = ui_node_from_key(ui_flag_draw_border, { 0 });
+                
+                
+            }
+            ui_pop_parent();
+        }
+        ui_pop_size();
+        
+        ui_pop_parent();
+        
+        scratch_end(scratch);
+        
+        
+        
+        
+        
+        
+        
         ui_end(ui);
         
         //- draw ui 
@@ -294,7 +343,6 @@ app_frame() {
                 
                 draw_set_next_color(color(0xe2e2e2ff));
                 draw_text(node->label, text_pos);
-                
                 
                 draw_pop_font();
                 draw_pop_font_size();

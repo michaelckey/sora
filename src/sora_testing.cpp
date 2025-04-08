@@ -2,8 +2,8 @@
 
 //- includes
 
-#include "sora_inc.h"
-#include "sora_inc.cpp"
+#include "core/sora_inc.h"
+#include "core/sora_inc.cpp"
 
 //- globals
 

@@ -50,10 +50,12 @@ ui_button(str_t string) {
         ui_flag_draw_background |
         ui_flag_draw_border |
         ui_flag_draw_hover_effects |
-        ui_flag_draw_active_effects;
+        ui_flag_draw_active_effects |
+        ui_flag_draw_text;
     
     ui_key_t node_key = ui_key_from_string(ui_top_seed_key(), string);
     ui_node_t* node = ui_node_from_key(flags, node_key);
+    node->label = string;
     ui_interaction interaction = ui_interaction_from_node(node);
     
     return interaction;
@@ -72,5 +74,36 @@ ui_buttonf(char* fmt, ...) {
     return result;
 }
 
+//- layout functions
+
+function ui_node_t* 
+ui_row_begin() {
+    ui_set_next_layout_dir(ui_dir_right);
+    ui_node_t* node = ui_node_from_key(0, { 0 });
+    ui_push_parent(node);
+    return node;
+}
+
+function ui_interaction
+ui_row_end() {
+    ui_node_t* node = ui_pop_parent();
+    ui_interaction interaction = ui_interaction_from_node(node);
+    return interaction;
+}
+
+function ui_node_t* 
+ui_column_begin() {
+    ui_set_next_layout_dir(ui_dir_down);
+    ui_node_t* node = ui_node_from_key(0, { 0 });
+    ui_push_parent(node);
+    return node;
+}
+
+function ui_interaction
+ui_column_end() {
+    ui_node_t* node = ui_pop_parent();
+    ui_interaction interaction = ui_interaction_from_node(node);
+    return interaction;
+}
 
 #endif // SORA_UI_WIDGETS_CPP

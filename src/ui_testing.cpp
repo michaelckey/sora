@@ -122,10 +122,13 @@ app_frame() {
         ui_begin(ui);
         ui_push_font(font);
         ui_push_font_size(10.0f);
-        ui_push_size(ui_size_pixels(150.0f), ui_size_pixels(25.0f));
+        
+        
+        //- reorderable list 
+        
+        /*ui_push_size(ui_size_pixels(150.0f), ui_size_pixels(25.0f));
         vec2_t mouse_pos = os_window_get_cursor_pos(window);
         
-        //- list 
         b8 dragged_this_frame = false;
         for (list_item_t* item = list.first,*next = nullptr; item != nullptr; item = next) {
             next = item->next;
@@ -207,24 +210,42 @@ app_frame() {
             
             data->prev = closest_item;
         }
+        ui_pop_size();*/
         
+        //- scrollable list
         
+        ui_node_flags flags = 
+            ui_flag_mouse_interactable |
+            ui_flag_view_scroll_y |
+            ui_flag_view_clamp_y | 
+            ui_flag_clip ;
         
-        //- 
+        ui_set_next_size(ui_size_pixels(250.0f), ui_size_pixels(400.0f));
+        ui_node_t* scrollable_container = ui_node_from_stringf(flags, "scrollable_container");
+        
+        ui_push_parent(scrollable_container);
+        ui_push_seed_key(scrollable_container->key);
+        ui_push_size(ui_size_percent(1.0f), ui_size_pixels(20.0f));
+        
+        for (i32 i = 0; i < 25; i++) {
+            ui_buttonf("item %i", i);
+        }
         
         ui_pop_size();
-        ui_pop_font();
-        ui_pop_font_size();
+        ui_pop_parent();
+        ui_pop_seed_key();
+        
+        
+        ui_interaction interaction = ui_interaction_from_node(scrollable_container);
         
         
         
-        //- table 
         
-        temp_t scratch = scratch_begin();
+        //- button table 
         
         ui_set_next_rect(rect(400.0f, 150.0f, 700.0f, 450.0f));
         ui_set_next_layout_dir(ui_dir_right);
-        ui_node_t* container = ui_node_from_key(ui_flag_draw_background, { 0 });
+        ui_node_t* container = ui_node_from_key(0, { 0 });
         
         ui_push_parent(container);
         
@@ -233,22 +254,12 @@ app_frame() {
         for (i32 i = 0; i < 5; i++) {
             
             ui_set_next_layout_dir(ui_dir_down);
-            ui_node_t* row = ui_node_from_key(ui_flag_draw_border, { 0 });
+            ui_node_t* row = ui_node_from_key(0, { 0 });
             ui_push_parent(row);
             
             for (i32 j = 0; j < 5; j ++) {
-                /*ui_node_flags node_flags = 
-                    ui_flag_mouse_interactable |
-                    ui_flag_draw_background | 
-                    ui_flag_draw_border | 
-                    ui_flag_draw_text;
-                
                 ui_set_next_text_alignment(ui_text_alignment_center);
-                ui_node_t* item = ui_node_from_string(node_flags, str_format(scratch.arena, "%i, %i", i, j));
-                ui_interaction interaction = ui_interaction_from_node(item);*/
-                
-                ui_node_t* item = ui_node_from_key(ui_flag_draw_border, { 0 });
-                
+                ui_buttonf("%i, %i", i, j);
                 
             }
             ui_pop_parent();
@@ -257,13 +268,10 @@ app_frame() {
         
         ui_pop_parent();
         
-        scratch_end(scratch);
+        //-
         
-        
-        
-        
-        
-        
+        ui_pop_font_size();
+        ui_pop_font();
         
         ui_end(ui);
         
@@ -273,6 +281,18 @@ app_frame() {
         for (ui_node_t* node = ui->node_root; node != nullptr;) {
             ui_node_rec_t rec = ui_node_rec_depth_first(node);
             
+            
+            // clipping
+            if (node->flags & ui_flag_clip) {
+                rect_t top_clip = draw_top_clip_mask();
+                rect_t new_clip = node->rect;
+                if (top_clip.x1 != 0.0f || top_clip.y1 != 0.0f) {
+                    new_clip = rect_intersection(new_clip, top_clip);
+                }
+                rect_validate(new_clip);
+                draw_push_clip_mask(new_clip);
+            }
+            
             if (node->flags & ui_flag_draw_shadow) {
                 draw_set_next_color(color(0x00000090));
                 draw_set_next_softness(6.0f);
@@ -281,6 +301,7 @@ app_frame() {
             
             if (node->flags & ui_flag_draw_background) {
                 
+                f32 width = rect_width(node->rect);
                 f32 height = rect_height(node->rect);
                 
                 rect_t top_rect = rect_cut_bottom(node->rect, roundf(height * 0.5f));
@@ -303,16 +324,15 @@ app_frame() {
                 draw_set_next_color1(col_end);
                 draw_set_next_color2(col_mid);
                 draw_set_next_color3(col_end);
-                draw_set_next_rounding(node->rounding);
-                draw_rect( top_rect);
+                draw_set_next_rounding(vec4(node->rounding.x, 0.0f, node->rounding.z, 0.0f));
+                draw_rect(top_rect);
                 
                 draw_set_next_color0(col_end);
                 draw_set_next_color1(col_mid);
                 draw_set_next_color2(col_end);
                 draw_set_next_color3(col_mid);
-                draw_set_next_rounding(node->rounding);
-                draw_rect(bottom_rect );
-                
+                draw_set_next_rounding(vec4(0.0f, node->rounding.y, 0.0f, node->rounding.w));
+                draw_rect(bottom_rect);
                 
             }
             
@@ -347,6 +367,22 @@ app_frame() {
                 draw_pop_font();
                 draw_pop_font_size();
             }
+            
+            // pop clipping
+            i32 pop_index = 0;
+            for (ui_node_t* n = node; n != nullptr && pop_index <= rec.pop_count; n = n->tree_parent) {
+                pop_index++;
+                
+                if (n == node && rec.push_count != 0) {
+                    continue;
+                }
+                
+                if (n->flags & ui_flag_clip) {
+                    draw_pop_clip_mask();
+                }
+                
+            }
+            
             
             node = rec.next;
         }

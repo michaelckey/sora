@@ -13,5 +13,12 @@ function ui_interaction ui_labelf(char* fmt, ...);
 function ui_interaction ui_button(str_t string);
 function ui_interaction ui_buttonf(char* fmt, ...);
 
+// layout
+
+function ui_node_t* ui_row_begin();
+function ui_interaction ui_row_end();
+
+function ui_node_t* ui_column_begin();
+function ui_interaction ui_column_end();
 
 #endif // SORA_UI_WIDGETS_H

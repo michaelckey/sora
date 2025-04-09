@@ -885,12 +885,14 @@ ui_layout_set_positions(ui_node_t* node, ui_axis axis) {
         layout_pos = node->size[axis] - node->padding[axis];
     }
     
+    f32 parent_pos = node->pos[axis];
+    
     for (ui_node_t* child = node->tree_first; child != nullptr; child = child->tree_next) {
         
         // calculate pos
         if (!(child->flags & (ui_flag_fixed_pos_x << axis))) {
             
-            child->pos_target[axis] = layout_pos;
+            child->pos_target[axis] = parent_pos + layout_pos;
             
             if (layout_axis == axis) {
                 
@@ -906,7 +908,7 @@ ui_layout_set_positions(ui_node_t* node, ui_axis axis) {
             }
             
         } else {
-            child->pos_target[axis] = child->pos_fixed[axis];
+            child->pos_target[axis] = parent_pos + child->pos_fixed[axis];
         }
         
         if (!(child->flags & (ui_flag_anim_pos_x << axis)) ||
@@ -915,11 +917,11 @@ ui_layout_set_positions(ui_node_t* node, ui_axis axis) {
         }
         
         b8 ignore_view_offset = (child->flags & (ui_flag_ignore_view_offset_x << axis));
-        f32 view_offset = !ignore_view_offset * floorf(node->view_offset[axis]);
+        f32 view_offset = !ignore_view_offset * node->view_offset[axis];
         
         // set rect
-        child->rect.v0[axis] = floorf(node->pos[axis] + child->pos[axis] - view_offset);
-        child->rect.v1[axis] = floorf(node->pos[axis] + child->pos[axis] + child->size[axis] - view_offset);
+        child->rect.v0[axis] = floorf(child->pos[axis] - view_offset);
+        child->rect.v1[axis] = floorf(child->pos[axis] + child->size[axis] - view_offset);
         
     }
     
@@ -1006,6 +1008,57 @@ ui_interaction_from_node(ui_node_t* node) {
                 }
             }
             
+            // mouse scroll event
+            if (event->type == ui_event_type_mouse_scroll) {
+                
+                // scrollable
+                if (node->flags & ui_flag_scrollable) {
+                    vec2_t scroll = os_event->scroll;
+                    
+                    if (os_event->modifiers & os_modifier_shift) {
+                        scroll.x = os_event->scroll.y;
+                        scroll.y = os_event->scroll.x;
+                    }
+                    
+                    taken = true;
+                }
+                
+                // view scroll
+                if (node->flags & ui_flag_view_scroll && !(os_event->modifiers & os_modifier_ctrl) ) {
+                    
+                    vec2_t scroll = os_event->scroll;
+                    
+                    if (os_event->modifiers & os_modifier_shift) {
+                        scroll.x = os_event->scroll.y;
+                        scroll.y = os_event->scroll.x;
+                    }
+                    
+                    scroll = vec2_mul(scroll, -17.0f);
+                    
+                    if (!(node->flags & ui_flag_view_scroll_x)) {
+                        scroll.x = 0.0f;
+                    }
+                    
+                    if (!(node->flags & ui_flag_view_scroll_y)) {
+                        scroll.y = 0.0f;
+                    }
+                    
+                    node->view_offset_target = vec2_add(node->view_offset_target, scroll);
+                    
+                    // clamp view scroll
+                    if (node->flags & ui_flag_view_clamp_x) {
+                        node->view_offset_target.x = clamp(node->view_offset_target.x, 0.0f, max(0.0f, node->view_bounds.x - node->size.x));
+                    }
+                    
+                    if (node->flags & ui_flag_view_clamp_y) {
+                        node->view_offset_target.y = clamp(node->view_offset_target.y, 0.0f, max(0.0f, node->view_bounds.y - node->size.y));
+                    }
+                    
+                    taken = true;
+                }
+                
+                
+            }
             
         }
         
@@ -1014,6 +1067,31 @@ ui_interaction_from_node(ui_node_t* node) {
             os_event_pop(os_event);
         }
     }
+    
+    // mouse dragging
+    if (node->flags & ui_flag_mouse_interactable) {
+        
+        for (i32 mouse_button = 0; mouse_button < os_mouse_button_count; mouse_button++) {
+            
+            // single dragging
+            if (ui_key_equals(context->key_active[mouse_button], node->key)) {
+                result |= ui_left_dragging << mouse_button;
+            }
+            
+            // double and triple dragging
+            if (result & (ui_left_dragging << mouse_button) &&
+                context->click_counter[mouse_button] >= 2) {
+                if (context->click_counter[mouse_button] % 2 == 0) {
+                    result |= ui_left_double_dragging << mouse_button;
+                } else {
+                    result |= ui_left_triple_dragging << mouse_button;
+                }
+            }
+            
+        }
+        
+    }
+    
     
     // mouse hovering
     if ((node->flags & ui_flag_mouse_interactable) && mouse_in_bounds) {
@@ -1037,7 +1115,6 @@ ui_interaction_from_node(ui_node_t* node) {
     return result;
     
 }
-
 
 
 //- stack functions 

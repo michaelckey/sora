@@ -691,6 +691,7 @@ function str_t str_format(arena_t* arena, char* fmt, ...);
 function void str_scan(str_t string, char* fmt, ...);
 function u32 str_find_word_index(str_t string, u32 start_index, i32 dir);
 function u64 str_hash(u64 seed, str_t string);
+function str_t str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace);
 
 //- str list
 function void str_list_push_node(str_list_t* list, str_node_t* node);

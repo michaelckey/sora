@@ -62,7 +62,13 @@ context->name##_stack.auto_pop = false;
                 case os_event_type_key_press: {
                     ui_event->type = ui_event_type_key_press;
                     
-                    // TODO: check key bindings
+                    ui_key_binding_t* binding = ui_key_binding_find(os_event->key, os_event->modifiers);
+                    if (binding != nullptr) {
+                        ui_event->type = binding->result_type;
+                        ui_event->flags = binding->result_flags;
+                        ui_event->delta_unit = binding->result_delta_unit;
+                        ui_event->delta = binding->result_delta;
+                    }
                     
                     break;
                 }
@@ -101,8 +107,7 @@ context->name##_stack.auto_pop = false;
             }
             
             // push to event list
-            dll_push_back(context->event_list.first, context->event_list.last, ui_event);
-            
+            ui_event_push(ui_event);
         }
         
     }
@@ -187,6 +192,7 @@ ui_end(ui_context_t* context) {
         
         // animation rates
         f32 dt = os_window_get_delta_time(context->window);
+        context->anim_rapid_rate = 1.0f - powf(2.0f, -75.0f * dt);
         context->anim_fast_rate = 1.0f - powf(2.0f, -50.0f * dt);
         context->anim_slow_rate = 1.0f - powf(2.0f, -25.0f * dt);
         
@@ -218,8 +224,10 @@ ui_end(ui_context_t* context) {
                 }
                 
                 // animate view offset
-                node->view_offset = vec2_mul(vec2_sub(node->view_offset_target, node->view_offset), context->anim_fast_rate);
+                node->view_offset.x += context->anim_fast_rate * (node->view_offset_target.x - node->view_offset.x);
                 if (fabsf(node->view_offset_target.x - node->view_offset.x) < 1.0f) { node->view_offset.x = node->view_offset_target.x; }
+                
+                node->view_offset.y += context->anim_fast_rate * (node->view_offset_target.y - node->view_offset.y);
                 if (fabsf(node->view_offset_target.y - node->view_offset.y) < 1.0f) { node->view_offset.y = node->view_offset_target.y; }
                 
             }
@@ -290,6 +298,48 @@ ui_context_create(os_handle_t window, gfx_handle_t renderer) {
 context->name##_default_node.v = initial;
     ui_stack_list
 #undef ui_stack
+    
+    // key bindings
+    ui_active_context = context;
+    
+    ui_key_binding_add(os_key_left,  0, ui_event_type_navigate, 0, ui_event_delta_unit_char, { -1, 0 } );
+    ui_key_binding_add(os_key_right, 0, ui_event_type_navigate, 0, ui_event_delta_unit_char, { +1, 0 } );
+    ui_key_binding_add(os_key_up,    0, ui_event_type_navigate, 0, ui_event_delta_unit_char, { 0, -1 } );
+    ui_key_binding_add(os_key_down,  0, ui_event_type_navigate, 0, ui_event_delta_unit_char, { 0, +1 } );
+    
+    ui_key_binding_add(os_key_left,  os_modifier_shift, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_char, { -1, 0 } );
+    ui_key_binding_add(os_key_right, os_modifier_shift, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_char, { +1, 0 } );
+    ui_key_binding_add(os_key_up,    os_modifier_shift, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_char, { 0, -1 } );
+    ui_key_binding_add(os_key_down,  os_modifier_shift, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_char, { 0, +1 } );
+    
+    ui_key_binding_add(os_key_left,  os_modifier_ctrl, ui_event_type_navigate, 0, ui_event_delta_unit_word, { -1, 0 } );
+    ui_key_binding_add(os_key_right, os_modifier_ctrl, ui_event_type_navigate, 0, ui_event_delta_unit_word, { +1, 0 } );
+    ui_key_binding_add(os_key_up,    os_modifier_ctrl, ui_event_type_navigate, 0, ui_event_delta_unit_word, { 0, -1 } );
+    ui_key_binding_add(os_key_down,  os_modifier_ctrl, ui_event_type_navigate, 0, ui_event_delta_unit_word, { 0, +1 } );
+    
+    ui_key_binding_add(os_key_left,  os_modifier_shift | os_modifier_ctrl, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_word, { -1, 0 } );
+    ui_key_binding_add(os_key_right, os_modifier_shift | os_modifier_ctrl, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_word, { +1, 0 } );
+    ui_key_binding_add(os_key_up,    os_modifier_shift | os_modifier_ctrl, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_word, { 0, -1 } );
+    ui_key_binding_add(os_key_down,  os_modifier_shift | os_modifier_ctrl, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_word, { 0, +1 } );
+    
+    ui_key_binding_add(os_key_home,  0, ui_event_type_navigate, 0, ui_event_delta_unit_line, { -1, 0 } );
+    ui_key_binding_add(os_key_end,   0, ui_event_type_navigate, 0, ui_event_delta_unit_line, { +1, 0 } );
+    ui_key_binding_add(os_key_home,  os_modifier_shift, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_line, { -1, 0 } );
+    ui_key_binding_add(os_key_end,   os_modifier_shift, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_line, { +1, 0 } );
+    
+    ui_key_binding_add(os_key_home,  os_modifier_ctrl, ui_event_type_navigate, 0, ui_event_delta_unit_whole, { -1, 0 } );
+    ui_key_binding_add(os_key_end,   os_modifier_ctrl, ui_event_type_navigate, 0, ui_event_delta_unit_whole, { +1, 0 } );
+    ui_key_binding_add(os_key_home,  os_modifier_shift | os_modifier_ctrl, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_whole, { -1, 0 } );
+    ui_key_binding_add(os_key_end,   os_modifier_shift | os_modifier_ctrl, ui_event_type_navigate, ui_event_flag_keep_mark, ui_event_delta_unit_whole, { +1, 0 } );
+    
+    ui_key_binding_add(os_key_delete,    0, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_char, { +1, 0 } );
+    ui_key_binding_add(os_key_backspace, 0, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_char, { -1, 0 } );
+    ui_key_binding_add(os_key_delete,    os_modifier_shift, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_char, { +1, 0 } );
+    ui_key_binding_add(os_key_backspace, os_modifier_shift, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_char, { -1, 0 } );
+    ui_key_binding_add(os_key_delete,    os_modifier_ctrl, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_word, { +1, 0 } );
+    ui_key_binding_add(os_key_backspace, os_modifier_ctrl, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_word, { -1, 0 } );
+    
+    ui_active_context = nullptr;
     
     return context;
 }
@@ -420,19 +470,19 @@ ui_text_align(font_handle_t font, f32 font_size, str_t text, rect_t rect, ui_tex
     
     switch (alignment) {
         default:
-        case ui_text_alignment_left: {
+        case ui_text_align_left: {
             result.x = rect.x0 + 4.0f; // TODO: make this a text padding param for frames.
             break;
         }
         
-        case ui_text_alignment_center: {
+        case ui_text_align_center: {
             f32 text_width = font_text_get_width(font, font_size, text);
             result.x = roundf((rect.x0 + rect.x1 - text_width) * 0.5f);
             result.x = max(result.x, rect.x0 + 4.0f);
             break;
         }
         
-        case ui_text_alignment_right: {
+        case ui_text_align_right: {
             f32 text_width = font_text_get_width(font, font_size, text);
             result.x = roundf(rect.x1 - text_width - 4.0f);
             result.x = max(result.x, rect.x0 + 4.0f);
@@ -444,6 +494,272 @@ ui_text_align(font_handle_t font, f32 font_size, str_t text, rect_t rect, ui_tex
     return result;
 }
 
+//- text point functions 
+
+function ui_text_point_t
+ui_text_point(i32 line, i32 column) {
+    ui_text_point_t result;
+    result.line = line;
+    result.column = column;
+    return result;
+}
+
+function b8
+ui_text_point_equals(ui_text_point_t a, ui_text_point_t b) {
+    return (a.line == b.line && a.column == b.column);
+}
+
+function b8
+ui_text_point_less_than(ui_text_point_t a, ui_text_point_t b) {
+    b8 result = false;
+    if(a.line < b.line) {
+        result = true;
+    } else if(a.line == b.line) {
+        result = a.column < b.column;
+    }
+    return result;
+}
+
+function ui_text_point_t
+ui_text_point_min(ui_text_point_t a, ui_text_point_t b) {
+    ui_text_point_t result = b;
+    if(ui_text_point_less_than(a, b)) {
+        result = a;
+    }
+    return result;
+}
+
+function ui_text_point_t
+ui_text_point_max(ui_text_point_t a, ui_text_point_t b) {
+    ui_text_point_t result = a;
+    if(ui_text_point_less_than(a, b)) {
+        result = b;
+    }
+    return result;
+}
+
+//- text range functions 
+
+function ui_text_range_t
+ui_text_range(ui_text_point_t min, ui_text_point_t max) {
+    ui_text_range_t range = { 0 };
+    if (ui_text_point_less_than(min, max)) {
+        range.min = min;
+        range.max = max;
+    } else {
+        range.min = max;
+        range.max = min;
+    }
+    return range;
+}
+
+function ui_text_range_t
+ui_text_range_intersects(ui_text_range_t a, ui_text_range_t b) {
+    ui_text_range_t result = { 0 };
+    result.min = ui_text_point_max(a.min, b.min);
+    result.max = ui_text_point_min(a.max, b.max);
+    if (ui_text_point_less_than(result.max, result.min)) {
+        memset(&result, 0, sizeof(ui_text_range_t));
+    }
+    return result;
+}
+
+function ui_text_range_t
+ui_text_range_union(ui_text_range_t a, ui_text_range_t b) {
+    ui_text_range_t result = { 0 };
+    result.min = ui_text_point_min(a.min, b.min);
+    result.max = ui_text_point_max(a.max, b.max);
+    return result;
+}
+
+function b8
+ui_text_range_contains(ui_text_range_t r, ui_text_point_t p) {
+    b8 result = ((ui_text_point_less_than(r.min, p) || ui_text_point_equals(r.min, p)) &&
+                 ui_text_point_less_than(p, r.max));
+    return result;
+}
+
+//- text op functions
+
+function ui_text_op_t 
+ui_single_line_text_op_from_event(arena_t *arena, ui_event_t* event, str_t string, ui_text_point_t cursor, ui_text_point_t mark) {
+    
+    ui_text_point_t next_cursor = cursor;
+    ui_text_point_t next_mark = mark;
+    ui_text_range_t range = { 0 };
+    str_t replace = { 0 };
+    str_t copy = { 0 };
+    ui_text_op_flags flags = 0;
+    ivec2_t delta = event->delta;
+    ivec2_t original_delta = delta;
+    
+    switch(event->delta_unit) {
+        default:{ break; }
+        
+        case ui_event_delta_unit_char: {
+            break;
+        }
+        
+        case ui_event_delta_unit_word: {
+            
+            ui_side side = (delta.x > 0) ? ui_side_max : ui_side_min;
+            
+            b8 found_text = false;
+            b8 found_non_space = false;
+            
+            i32 new_column = cursor.column;
+            i32 inc_delta = (!!side)*2 - 1;
+            i32 start_off = inc_delta < 0 ? inc_delta : 0;
+            
+            // start at the cursor and inc or dec depending on delta
+            for(i32 col = cursor.column + start_off; 1 <= col && col <= string.size + 1; col += inc_delta) {
+                
+                u8 byte = (col <= string.size) ? string.data[col-1] : 0;
+                
+                b8 is_non_space = !char_is_space(byte);
+                b8 is_name = (char_is_alpha(byte) || char_is_digit(byte) || byte == '_');
+                
+                if(((side == ui_side_min) && (col == 1)) || 
+                   ((side == ui_side_max) && (col == string.size + 1)) ||
+                   (found_non_space && !is_non_space) || 
+                   (found_text && !is_name)) {
+                    new_column = col + (!side && col != 1);  
+                    break;
+                } else if (!found_text && is_name) {
+                    found_text = true;
+                } else if (!found_non_space && is_non_space) {
+                    found_non_space = true;
+                }
+            }
+            
+            delta.x = new_column - cursor.column;
+            
+            break;
+        }
+        
+        case ui_event_delta_unit_line: 
+        case ui_event_delta_unit_whole: 
+        case ui_event_delta_unit_page: {
+            i32 first_nonwhitespace_column = 1;
+            for(i32 idx = 0; idx < string.size; idx += 1) {
+                if(!char_is_space(string.data[idx])) {
+                    first_nonwhitespace_column = (i32)idx + 1;
+                    break;
+                }
+            }
+            i32 home_dest_column = (cursor.column == first_nonwhitespace_column) ? 1 : first_nonwhitespace_column;
+            delta.x = (delta.x > 0) ? ((i32)string.size+1 - cursor.column) : (home_dest_column - cursor.column);
+            
+            break;
+        }
+        
+    }
+    
+    if(!ui_text_point_equals(cursor, mark) && event->flags & ui_event_flag_zero_delta) {
+        delta = ivec2(0, 0);
+    }
+    
+    if(ui_text_point_equals(cursor, mark) || !(event->flags & ui_event_flag_zero_delta)) {
+        next_cursor.column += delta.x;
+    }
+    
+    if(!ui_text_point_equals(cursor, mark) && event->flags & ui_event_flag_pick_side) {
+        if(original_delta.x < 0 || original_delta.y < 0) {
+            next_cursor = next_mark = ui_text_point_min(cursor, mark);
+        } else if(original_delta.x > 0 || original_delta.y > 0) {
+            next_cursor = next_mark = ui_text_point_max(cursor, mark);
+        }
+    }
+    
+    // deletion
+    if(event->flags & ui_event_flag_delete) {
+        ui_text_point_t new_pos = ui_text_point_min(next_cursor, next_mark);
+        range = ui_text_range(next_cursor, next_mark);
+        replace = str("");
+        next_cursor = next_mark = new_pos;
+    }
+    
+    // keep mark
+    if(!(event->flags & ui_event_flag_keep_mark)) {
+        next_mark = next_cursor;
+    }
+    
+    // insertion
+    if(event->os_event->string.size != 0) {
+        range = ui_text_range(cursor, mark);
+        replace = str_copy(arena, event->os_event->string);
+        next_cursor = next_mark = ui_text_point(range.min.line, range.min.column + event->os_event->string.size);
+    }
+    
+    // should event be taken
+    if(next_cursor.column > string.size + 1 || 1 > next_cursor.column || event->delta.y != 0) {
+        flags |= ui_text_op_flag_invalid;
+    }
+    
+    next_cursor.column = clamp(next_cursor.column, 1, string.size + replace.size + 1);
+    next_mark.column = clamp(next_mark.column, 1, string.size + replace.size + 1);
+    
+    
+    ui_text_op_t result = { 0 };
+    
+    result.flags = flags;
+    result.replace = replace;
+    result.copy = copy;
+    result.range = range;
+    result.cursor = next_cursor;
+    result.mark = next_mark;
+    
+    return result;
+}
+
+//- events functions 
+
+function void 
+ui_event_push(ui_event_t* event) {
+    dll_push_back(ui_active_context->event_list.first, ui_active_context->event_list.last, event);
+}
+
+function void 
+ui_event_pop(ui_event_t* event) {
+    dll_remove(ui_active_context->event_list.first, ui_active_context->event_list.last, event);
+}
+
+//- key binding functions 
+
+function void 
+ui_key_binding_add(os_key key, os_modifiers modifiers, ui_event_type result_type, ui_event_flags result_flags, ui_event_delta_unit result_delta_unit, ivec2_t result_delta) {
+    
+    ui_context_t* context = ui_active_context;
+    
+    ui_key_binding_t* binding = (ui_key_binding_t*)arena_alloc(context->arena, sizeof(ui_key_binding_t));
+    
+    binding->key = key;
+    binding->modifiers = modifiers;
+    binding->result_type = result_type;
+    binding->result_flags = result_flags;
+    binding->result_delta_unit = result_delta_unit;
+    binding->result_delta = result_delta;
+    
+    dll_push_back(context->key_binding_list.first, context->key_binding_list.last, binding);
+}
+
+function ui_key_binding_t* 
+ui_key_binding_find(os_key key, os_modifiers modifiers) {
+    // TODO: key binding lookup might be slow in future
+    //if the binding are large. we can probably do a hash
+    // lookup for speed. but this works for now.
+    
+    ui_key_binding_t* binding = nullptr;
+    
+    for (ui_key_binding_t* b = ui_active_context->key_binding_list.first; b != nullptr; b = b->next) {
+        if (key == b->key && modifiers == b->modifiers) {
+            binding = b;
+            break;
+        }
+    }
+    
+    return binding;
+}
 
 //- theme functions 
 
@@ -461,6 +777,77 @@ ui_color_from_key(ui_key_t key) {
     }
     
     return result;
+}
+
+//- animation functions 
+
+
+function ui_anim_params_t 
+ui_anim_params_create(f32 initial, f32 target, f32 rate) {
+    return { initial, target, rate };
+}
+
+function f32 
+ui_anim_ex(ui_key_t key, ui_anim_params_t params) {
+    
+    // get context
+    ui_context_t* context = ui_active_context;
+    i32 index = key.data[0] % context->anim_hash_list_count;
+    
+    // search for in list
+    ui_anim_node_t* node = nullptr;
+    if (!ui_key_equals(key, { 0 })) {
+        for (ui_anim_node_t* n = context->anim_hash_list[index].first; n != nullptr; n = n->list_next) {
+            if (ui_key_equals(key, n->key)) {
+                node = n;
+                break;
+            }
+        }
+    }
+    
+    // if we didn't find one, allocate it
+    if (node == nullptr) {
+        node = context->anim_node_free;
+        if (node != nullptr) {
+            stack_pop_n(context->anim_node_free, list_next);
+        } else {
+            node = (ui_anim_node_t*)arena_alloc(context->arena, sizeof(ui_anim_node_t));
+        }
+        memset(node, 0, sizeof(ui_anim_node_t));
+        
+        // fill struct
+        node->first_build_index = context->build_index;
+        node->key = key;
+        node->params = params;
+        node->current = params.initial;
+        
+        // add to list
+        dll_push_back_np(context->anim_hash_list[index].first, context->anim_hash_list[index].last, node, list_next, list_prev);
+        
+    } else {
+        // remove from lru list
+        dll_remove_np(context->anim_node_lru, context->anim_node_mru, node, lru_next, lru_prev);
+    }
+    
+    // update node
+    node->last_build_index = context->build_index;
+    dll_push_back_np(context->anim_node_lru, context->anim_node_mru, node, lru_next, lru_prev);
+    node->params = params;
+    
+    if (node->params.rate == 1.0f) {
+        node->current = node->params.target;
+    }
+    
+    return node->current;
+}
+
+function f32 
+ui_anim(ui_key_t key, f32 initial, f32 target, f32 rate) {
+    ui_anim_params_t params = { 0 };
+	params.initial = initial;
+	params.target = target;
+	params.rate = rate;
+	return ui_anim_ex(key, params);
 }
 
 //- drag state functions 
@@ -672,6 +1059,12 @@ ui_node_rec_depth_first(ui_node_t* node) {
     return rec;
 }
 
+function void 
+ui_node_set_custom_draw_func(ui_node_t* node, ui_node_custom_draw_func* func, void* data) {
+    node->custom_draw_func = func;
+    node->custom_draw_data = data;
+}
+
 //- layout functions 
 
 
@@ -855,7 +1248,7 @@ ui_layout_solve_violations(ui_node_t* node, ui_axis axis) {
     }
     
     if (node->flags & (ui_flag_overflow_x << axis)) {
-        for (ui_node_t* child = node->tree_first; node != nullptr; node = node->tree_next) {
+        for (ui_node_t* child = node->tree_first; child != nullptr; child = child->tree_next) {
             if (child->size_wanted[axis].type == ui_size_type_percent) {
                 child->size[axis] = node->size[axis] * child->size_wanted[axis].value;
             }

@@ -6,11 +6,10 @@
 // TODO:
 //
 // [x] - font alignment.
-// [ ] - hover cursor.
-// [ ] - more events
-//    [ ] - typing.
-//    [ ] - scrolling.
-//    [ ] - key bindings.
+// [x] - hover cursor.
+// [x] - scrolling.
+// [ ] - text input.
+// [ ] - key bindings.
 // [ ] - navigation.
 // [ ] - animation sizing.
 // 
@@ -33,7 +32,7 @@ ui_stack(size_y, ui_size_t, { 0 })\
 ui_stack(padding_x, f32, 0.0f)\
 ui_stack(padding_y, f32, 0.0f)\
 ui_stack(layout_dir, ui_dir, ui_dir_down)\
-ui_stack(text_alignment, ui_text_alignment, ui_text_alignment_left)\
+ui_stack(text_alignment, ui_text_alignment, ui_text_align_left)\
 ui_stack(hover_cursor, os_cursor, os_cursor_null)\
 ui_stack(rounding_00, f32, 4.0f)\
 ui_stack(rounding_01, f32, 4.0f)\
@@ -81,9 +80,16 @@ enum {
 
 typedef u32 ui_text_alignment;
 enum {
-    ui_text_alignment_left,
-    ui_text_alignment_center,
-    ui_text_alignment_right,
+    ui_text_align_left,
+    ui_text_align_center,
+    ui_text_align_right,
+};
+
+typedef u32 ui_text_op_flags;
+enum {
+    ui_text_op_flag_none = 0,
+    ui_text_op_flag_invalid = (1 << 0),
+    ui_text_op_flag_copy = (1 << 1),
 };
 
 enum ui_event_type {
@@ -259,6 +265,46 @@ struct ui_theme_t {
     u32 theme_pattern_hash_list_count;
 };
 
+
+struct ui_text_point_t {
+    i32 line;
+    i32 column;
+};
+
+struct ui_text_range_t {
+    ui_text_point_t min;
+    ui_text_point_t max;
+};
+
+// text op
+struct ui_text_op_t {
+    ui_text_op_flags flags;
+    str_t replace;
+    str_t copy;
+    ui_text_range_t range;
+    ui_text_point_t cursor;
+    ui_text_point_t mark;
+};
+
+// key binding
+struct ui_key_binding_t {
+    ui_key_binding_t* next;
+    ui_key_binding_t* prev;
+    
+    os_key key;
+    os_modifiers modifiers;
+    
+    ui_event_type result_type;
+    ui_event_flags result_flags;
+    ui_event_delta_unit result_delta_unit;
+    ivec2_t result_delta;
+};
+
+struct ui_key_binding_list_t {
+    ui_key_binding_t* first;
+    ui_key_binding_t* last;
+};
+
 // events
 struct ui_event_t {
     ui_event_t* next;
@@ -268,6 +314,7 @@ struct ui_event_t {
     ui_event_flags flags;
     ui_event_delta_unit delta_unit;
     os_event_t* os_event;
+    ivec2_t delta;
 };
 
 struct ui_event_list_t {
@@ -445,6 +492,7 @@ struct ui_context_t {
     ui_anim_node_t* anim_node_lru;
     ui_anim_node_t* anim_node_mru;
     
+    f32 anim_rapid_rate;
     f32 anim_fast_rate;
     f32 anim_slow_rate;
     
@@ -463,6 +511,7 @@ struct ui_context_t {
     u32 click_counter[os_mouse_button_count];
     u64 last_click_time[os_mouse_button_count];
     vec2_t mouse_pos;
+    ui_key_binding_list_t key_binding_list;
     
     // drag state
     ui_drag_state drag_state;
@@ -517,8 +566,37 @@ function ui_dir ui_dir_from_axis_side(ui_axis axis, ui_side side);
 function vec2_t  ui_text_size(font_handle_t font, f32 font_size, str_t text);
 function vec2_t ui_text_align(font_handle_t font, f32 font_size, str_t text, rect_t rect, ui_text_alignment alignment);
 
+// text point
+function ui_text_point_t ui_text_point(i32 line, i32 column);
+function b8 ui_text_point_equals(ui_text_point_t a, ui_text_point_t b);
+function b8 ui_text_point_less_than(ui_text_point_t a, ui_text_point_t b);
+function ui_text_point_t ui_text_point_less_min(ui_text_point_t a, ui_text_point_t b);
+function ui_text_point_t ui_text_point_less_max(ui_text_point_t a, ui_text_point_t b);
+
+// text range
+function ui_text_range_t ui_text_range(ui_text_point_t min, ui_text_point_t max);
+function ui_text_range_t ui_text_range_intersects(ui_text_range_t a, ui_text_range_t b);
+function ui_text_range_t ui_text_range_union(ui_text_range_t a, ui_text_range_t b);
+function b8 ui_text_range_contains(ui_text_range_t r, ui_text_point_t p);
+
+// text op
+function ui_text_op_t ui_single_line_text_op_from_event(arena_t *arena, ui_event_t* event, str_t string, ui_text_point_t cursor, ui_text_point_t mark);
+
+// events
+function void ui_event_push(ui_event_t* event);
+function void ui_event_pop(ui_event_t* event);
+
+// keybinding
+function void ui_key_binding_add(os_key key, os_modifiers modifiers, ui_event_type result_type, ui_event_flags result_flags, ui_event_delta_unit result_delta_unit, ivec2_t result_delta);
+function ui_key_binding_t* ui_key_binding_find(os_key key, os_modifiers modifiers);
+
 // theme
 function color_t ui_color_from_key(ui_key_t key);
+
+// animation
+function ui_anim_params_t ui_anim_params_create(f32 initial, f32 target, f32 rate = ui_active_context->anim_fast_rate);
+function f32 ui_anim_ex(ui_key_t key, ui_anim_params_t params);
+function f32 ui_anim(ui_key_t key, f32 initial, f32 target, f32 rate = ui_active_context->anim_fast_rate);
 
 // drag state
 function void ui_drag_store_data(void* data, u32 size);
@@ -536,6 +614,8 @@ function ui_node_t* ui_node_from_key(ui_node_flags flags, ui_key_t key);
 function ui_node_t* ui_node_from_string(ui_node_flags flags, str_t string);
 function ui_node_t* ui_node_from_stringf(ui_node_flags flags, char* fmt, ...);
 function ui_node_rec_t ui_node_rec_depth_first(ui_node_t* node);
+
+function void ui_node_set_custom_draw_func(ui_node_t* node, ui_node_custom_draw_func* func, void* data);
 
 // interaction
 function ui_interaction ui_interaction_from_node(ui_node_t* node);

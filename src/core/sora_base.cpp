@@ -605,6 +605,37 @@ str_find_word_index(str_t string, u32 start_index, i32 dir) {
     
 }
 
+function str_t 
+str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace) {
+    
+    ivec2_t adj_range = ivec2(range.x - 1, range.y - 1); 
+    
+    if(adj_range.x > string.size) {
+        adj_range.x = 0;
+    }
+    
+    if(adj_range.y > string.size) {
+        adj_range.y = string.size;
+    }
+    
+    // calculate new size
+    u32 old_size = string.size;
+    u32 new_size = old_size - (adj_range.y - adj_range.x) + replace.size;
+    
+    u8* base = (u8*)arena_alloc(arena, sizeof(u8) * new_size);
+    
+    memcpy(base + 0, string.data, adj_range.x);
+    memcpy(base + adj_range.x + replace.size, string.data + adj_range.y, string.size - adj_range.y);
+    
+    if(replace.data != 0) {
+        memcpy(base + adj_range.x, replace.data, replace.size);
+    }
+    
+    str_t result = str((char*)base, new_size);
+    
+    return result;
+}
+
 //- str list
 
 function void

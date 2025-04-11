@@ -222,7 +222,7 @@ struct os_event_t {
 	os_key key;
 	os_mouse_button mouse;
 	os_modifiers modifiers;
-	u32 character;
+    str_t string;
 	vec2_t position;
 	vec2_t scroll;
 };

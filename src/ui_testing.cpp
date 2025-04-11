@@ -126,7 +126,10 @@ app_frame() {
         
         //- reorderable list 
         
-        /*ui_push_size(ui_size_pixels(150.0f), ui_size_pixels(25.0f));
+        ui_set_next_size(ui_size_pixels(250.0f), ui_size_pixels(25.0f));
+        ui_labelf("reorderable list");
+        
+        ui_push_size(ui_size_pixels(150.0f), ui_size_pixels(25.0f));
         vec2_t mouse_pos = os_window_get_cursor_pos(window);
         
         b8 dragged_this_frame = false;
@@ -138,6 +141,8 @@ app_frame() {
                 ui_flag_mouse_interactable |
                 ui_flag_draw_background | 
                 ui_flag_draw_border | 
+                ui_flag_draw_hover_effects |
+                ui_flag_draw_active_effects |
                 ui_flag_draw_text |
                 ui_flag_anim_pos_y;
             
@@ -210,9 +215,12 @@ app_frame() {
             
             data->prev = closest_item;
         }
-        ui_pop_size();*/
+        ui_pop_size();
         
         //- scrollable list
+        
+        ui_set_next_size(ui_size_pixels(250.0f), ui_size_pixels(25.0f));
+        ui_labelf("scrollable list");
         
         ui_node_flags flags = 
             ui_flag_mouse_interactable |
@@ -220,12 +228,12 @@ app_frame() {
             ui_flag_view_clamp_y | 
             ui_flag_clip ;
         
-        ui_set_next_size(ui_size_pixels(250.0f), ui_size_pixels(400.0f));
+        ui_set_next_size(ui_size_pixels(250.0f), ui_size_pixels(300.0f));
         ui_node_t* scrollable_container = ui_node_from_stringf(flags, "scrollable_container");
         
         ui_push_parent(scrollable_container);
         ui_push_seed_key(scrollable_container->key);
-        ui_push_size(ui_size_percent(1.0f), ui_size_pixels(20.0f));
+        ui_push_size(ui_size_percent(1.0f), ui_size_pixels(25.0f));
         
         for (i32 i = 0; i < 25; i++) {
             ui_buttonf("item %i", i);
@@ -234,12 +242,7 @@ app_frame() {
         ui_pop_size();
         ui_pop_parent();
         ui_pop_seed_key();
-        
-        
         ui_interaction interaction = ui_interaction_from_node(scrollable_container);
-        
-        
-        
         
         //- button table 
         
@@ -258,7 +261,7 @@ app_frame() {
             ui_push_parent(row);
             
             for (i32 j = 0; j < 5; j ++) {
-                ui_set_next_text_alignment(ui_text_alignment_center);
+                ui_set_next_text_alignment(ui_text_align_center);
                 ui_buttonf("%i, %i", i, j);
                 
             }
@@ -267,6 +270,16 @@ app_frame() {
         ui_pop_size();
         
         ui_pop_parent();
+        
+        //- text box 
+        
+        persist ui_text_point_t cursor = {1, 1};
+        persist ui_text_point_t mark = {1, 1};
+        persist u8 edit_buffer[128];
+        persist u32 out_size;
+        
+        ui_set_next_rect(rect(400.0f, 10.0f, 700.0f, 35.0f));
+        ui_text_edit(&cursor, &mark, edit_buffer, 128, &out_size, str(""), str("text_edit"));
         
         //-
         
@@ -281,7 +294,6 @@ app_frame() {
         for (ui_node_t* node = ui->node_root; node != nullptr;) {
             ui_node_rec_t rec = ui_node_rec_depth_first(node);
             
-            
             // clipping
             if (node->flags & ui_flag_clip) {
                 rect_t top_clip = draw_top_clip_mask();
@@ -293,49 +305,59 @@ app_frame() {
                 draw_push_clip_mask(new_clip);
             }
             
+            // shadow
             if (node->flags & ui_flag_draw_shadow) {
                 draw_set_next_color(color(0x00000090));
                 draw_set_next_softness(6.0f);
                 draw_rect(rect_translate(rect_grow(node->rect, 4.0f), 4.0f));
             }
             
+            // background
             if (node->flags & ui_flag_draw_background) {
                 
-                f32 width = rect_width(node->rect);
                 f32 height = rect_height(node->rect);
-                
                 rect_t top_rect = rect_cut_bottom(node->rect, roundf(height * 0.5f));
                 rect_t bottom_rect = rect_cut_top(node->rect, roundf(height * 0.25f));
                 
-                color_t col_mid = color(0x252629ff);
-                color_t col_end = color(0x292a2fff);
+                // colors
+                color_t color_main = color(0x252629ff);
+                color_t color_effect = color(0x292a2fff);
                 
-                col_mid = color_lerp(col_mid, color_blend(col_mid, color(0xffffff05)), node->hover_t);
-                col_mid = color_lerp(col_mid, color_blend(col_mid, color(0xffffff05)), node->active_t);
+                if (node->flags & ui_flag_draw_hover_effects) {
+                    color_main = color_lerp(color_main, color_blend(color_main, color(0xffffff05)), node->hover_t);
+                    color_effect = color_lerp(color_effect, color_blend(color_effect, color(0xffeedd25)), node->hover_t);
+                }
                 
-                col_end = color_lerp(col_end, color_blend(col_end, color(0xffeedd25)), node->hover_t);
-                col_end = color_lerp(col_end, color_blend(col_end, color(0xffeedd65)), node->active_t);
+                if (node->flags & ui_flag_draw_active_effects) {
+                    color_main = color_lerp(color_main, color_blend(color_main, color(0xffffff05)), node->active_t);
+                    color_effect = color_lerp(color_effect, color_blend(color_effect, color(0xffeedd65)), node->active_t);
+                }
                 
-                draw_set_next_color(col_mid);
+                // draw main background
+                draw_set_next_color(color_main);
                 draw_set_next_rounding(node->rounding);
                 draw_rect(node->rect);
                 
-                draw_set_next_color0(col_mid);
-                draw_set_next_color1(col_end);
-                draw_set_next_color2(col_mid);
-                draw_set_next_color3(col_end);
-                draw_set_next_rounding(vec4(node->rounding.x, 0.0f, node->rounding.z, 0.0f));
-                draw_rect(top_rect);
-                
-                draw_set_next_color0(col_end);
-                draw_set_next_color1(col_mid);
-                draw_set_next_color2(col_end);
-                draw_set_next_color3(col_mid);
-                draw_set_next_rounding(vec4(0.0f, node->rounding.y, 0.0f, node->rounding.w));
-                draw_rect(bottom_rect);
+                // draw effects
+                if (node->flags & ui_flag_draw_hover_effects | ui_flag_draw_active_effects) {
+                    draw_set_next_color0(color_main);
+                    draw_set_next_color1(color_effect);
+                    draw_set_next_color2(color_main);
+                    draw_set_next_color3(color_effect);
+                    draw_set_next_rounding(vec4(node->rounding.x, 0.0f, node->rounding.z, 0.0f));
+                    draw_rect(top_rect);
+                    
+                    draw_set_next_color0(color_effect);
+                    draw_set_next_color1(color_main);
+                    draw_set_next_color2(color_effect);
+                    draw_set_next_color3(color_main);
+                    draw_set_next_rounding(vec4(0.0f, node->rounding.y, 0.0f, node->rounding.w));
+                    draw_rect(bottom_rect);
+                }
                 
             }
             
+            // border
             if (node->flags & ui_flag_draw_border) {
                 
                 draw_set_next_color0(color(0xffffff35));
@@ -350,9 +372,9 @@ app_frame() {
                 draw_set_next_rounding(node->rounding);
                 draw_set_next_thickness(1.0f);
                 draw_rect(node->rect);
-                
             }
             
+            // text
             if (node->flags & ui_flag_draw_text) {
                 vec2_t text_pos = ui_text_align(node->font, node->font_size, node->label, node->rect, node->text_alignment);
                 draw_push_font(node->font);
@@ -366,6 +388,13 @@ app_frame() {
                 
                 draw_pop_font();
                 draw_pop_font_size();
+            }
+            
+            // custom draw
+            if (node->flags & ui_flag_draw_custom) {
+                if (node->custom_draw_func != nullptr) {
+                    node->custom_draw_func(node);
+                }
             }
             
             // pop clipping

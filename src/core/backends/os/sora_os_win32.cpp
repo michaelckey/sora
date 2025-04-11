@@ -1354,7 +1354,7 @@ os_w32_window_procedure(HWND handle, UINT msg, WPARAM wparam, LPARAM lparam) {
                 event = (os_event_t*)arena_calloc(os_state.event_list_arena, sizeof(os_event_t));
                 event->window = window_handle;
                 event->type = os_event_type_text;
-                event->character = key;
+                event->string = str_copy(os_state.event_list_arena, str(&(char)key, 1));
             }
             
             break;

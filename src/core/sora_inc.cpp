@@ -9,6 +9,5 @@
 #include "sora_os.cpp"
 #include "sora_gfx.cpp"
 #include "sora_font.cpp"
-#include "sora_draw.cpp"
 
 #endif // SORA_INC_CPP

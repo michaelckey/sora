@@ -35,10 +35,10 @@ struct draw_instance_t {
 	vec2_t point1;
 	vec2_t point2;
 	vec2_t point3;
-	vec4_t color0;
-	vec4_t color1;
-	vec4_t color2;
-	vec4_t color3;
+	color_t color0;
+	color_t color1;
+	color_t color2;
+	color_t color3;
 	vec4_t radii;
 	f32 thickness;
 	f32 softness;

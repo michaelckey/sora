@@ -652,6 +652,22 @@ str_list_push(arena_t* arena, str_list_t* list, str_t string) {
 	str_list_push_node(list, n);
 }
 
+function str_t
+str_list_get_index(str_list_t list, i32 index) {
+    str_t result = { 0 };
+    
+    i32 i = 0;
+    for (str_node_t* node = list.first; node != nullptr; node = node->next) {
+        if (i == index) {
+            result = node->string;
+            break;
+        }
+        i++;
+    }
+    
+    return result;
+}
+
 function str_list_t
 str_split(arena_t* arena, str_t string, u8* splits, u32 split_count) {
 	str_list_t list = { 0 };
@@ -675,9 +691,9 @@ str_split(arena_t* arena, str_t string, u8* splits, u32 split_count) {
 		}
         
 		str_t sub_string = str_range(first, ptr);
-		if (sub_string.size > 0) {
-			str_list_push(arena, &list, sub_string);
-		}
+		//if (sub_string.size > 0) {
+        str_list_push(arena, &list, sub_string);
+		//}
 		ptr += 1;
 	}
     
@@ -804,6 +820,29 @@ f32_from_str(str_t string) {
     
     return sign * ((f32)integer_part + (f32)fraction_part / (f32)divisor);
 }
+
+function i32
+i32_from_str(str_t string) {
+    
+    i32 i = 0;
+    i32 sign = 1;
+    i32 integer_part = 0;
+    
+    if (string.data[i] == '-') {
+        sign = -1;
+        i++;
+    } else if (string.data[i] == '+') {
+        i++;
+    }
+    
+    while(char_is_digit(string.data[i]) && i < string.size) {
+        integer_part = integer_part * 10 + (string.data[i] - '0');
+        i++;
+    }
+    
+    return sign * integer_part;
+}
+
 
 //- fuzzy matching 
 

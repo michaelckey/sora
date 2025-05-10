@@ -34,7 +34,7 @@ font_open(str_t filepath) {
 	font_dwrite_state.dwrite_factory2->CreateFontFace(DWRITE_FONT_FACE_TYPE_TRUETYPE, 1, &font->file, 0, DWRITE_FONT_SIMULATIONS_NONE, &(font->face));
     
 	str_t font_name = str_get_file_name(filepath);
-	log_infof("successfully opened font: %.*s", font_name.size, font_name.data);
+	log_infof("successfully opened font: '%.*s'", font_name.size, font_name.data);
     
 	scratch_end(scratch);
     

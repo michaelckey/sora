@@ -598,7 +598,6 @@ union color_t {
 		f32 h, s, v, _unused0;
 	};
     
-	vec4_t vec;
 };
 
 
@@ -709,6 +708,7 @@ function str16_t str16_from_str(arena_t* arena, str_t string);
 //- number/string conversions
 function f32 f32_from_str(str_t string);
 function str_t str_from_f32(f32 value);
+function i32 i32_from_str(str_t string);
 
 //- fuzzy matching 
 function fuzzy_match_list_t str_fuzzy_match_find(arena_t* arena, str_t needle, str_t haystack);

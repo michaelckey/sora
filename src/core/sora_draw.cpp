@@ -469,14 +469,13 @@ draw_begin(gfx_handle_t renderer) {
 	
     prof_scope("draw_begin") {
         
-        
         // clear batch arena
         arena_clear(draw_state.batch_arena);
         draw_state.batch_first = nullptr;
         draw_state.batch_last = nullptr;
         
         // update pipeline and constant buffer
-        uvec2_t renderer_size = gfx_renderer_get_size(renderer);
+        uvec2_t renderer_size = gfx_context_get_size(renderer);
         rect_t screen = rect(0.0f, 0.0f, (f32)renderer_size.x, (f32)renderer_size.y);
         draw_state.pipeline.viewport = screen;
         draw_state.pipeline.scissor = screen;
@@ -513,7 +512,6 @@ draw_begin(gfx_handle_t renderer) {
         // push default clip mask and texture
         draw_push_clip_mask(rect(0.0f, 0.0f, (f32)renderer_size.x, (f32)renderer_size.y));
         draw_push_texture(draw_state.texture);
-        
         
     }
 }
@@ -638,20 +636,18 @@ draw_rect(rect_t rect) {
 	instance->bbox = rect;
 	instance->tex = {0.0f, 0.0f, 1.0f, 1.0f};
 	
-	instance->color0 = draw_top_color0().vec;
-	instance->color1 = draw_top_color1().vec;
-	instance->color2 = draw_top_color2().vec;
-	instance->color3 = draw_top_color3().vec;
+	instance->color0 = draw_top_color0();
+	instance->color1 = draw_top_color1();
+	instance->color2 = draw_top_color2();
+	instance->color3 = draw_top_color3();
     
 	instance->radii = draw_top_rounding();
 	instance->thickness = draw_top_thickness();
 	instance->softness = draw_top_softness();
     
-	instance->indices = draw_pack_indices(
-                                          draw_shape_rect,
+	instance->indices = draw_pack_indices(draw_shape_rect,
                                           draw_get_texture_index(draw_top_texture()),
-                                          draw_get_clip_mask_index(draw_top_clip_mask())
-                                          );
+                                          draw_get_clip_mask_index(draw_top_clip_mask()));
     
 	draw_auto_pop_stacks();
 }
@@ -666,20 +662,18 @@ draw_image(rect_t rect) {
 	instance->bbox = rect;
 	instance->tex = { 0.0f, 0.0f, 1.0f, 1.0f };
     
-	instance->color0 = draw_top_color0().vec;
-	instance->color1 = draw_top_color1().vec;
-	instance->color2 = draw_top_color2().vec;
-	instance->color3 = draw_top_color3().vec;
+	instance->color0 = draw_top_color0();
+	instance->color1 = draw_top_color1();
+	instance->color2 = draw_top_color2();
+	instance->color3 = draw_top_color3();
     
 	instance->radii = draw_top_rounding();
 	instance->thickness = draw_top_thickness();
 	instance->softness = draw_top_softness();
     
-	instance->indices = draw_pack_indices(
-                                          draw_shape_rect,
+	instance->indices = draw_pack_indices(draw_shape_rect,
                                           draw_get_texture_index(draw_top_texture()),
-                                          draw_get_clip_mask_index(draw_top_clip_mask())
-                                          );
+                                          draw_get_clip_mask_index(draw_top_clip_mask()));
     
 	draw_auto_pop_stacks();
     
@@ -709,10 +703,10 @@ draw_quad(vec2_t p0, vec2_t p1, vec2_t p2, vec2_t p3) {
     
 	instance->bbox = bbox;
     
-	instance->color0 = draw_top_color0().vec;
-	instance->color1 = draw_top_color1().vec;
-	instance->color2 = draw_top_color2().vec;
-	instance->color3 = draw_top_color3().vec;
+	instance->color0 = draw_top_color0();
+	instance->color1 = draw_top_color1();
+	instance->color2 = draw_top_color2();
+	instance->color3 = draw_top_color3();
     
 	instance->point0 = c_p0;
 	instance->point1 = c_p1;
@@ -722,11 +716,9 @@ draw_quad(vec2_t p0, vec2_t p1, vec2_t p2, vec2_t p3) {
 	instance->thickness = draw_top_thickness();
 	instance->softness = softness;
     
-	instance->indices = draw_pack_indices(
-                                          draw_shape_quad,
+	instance->indices = draw_pack_indices(draw_shape_quad,
                                           draw_get_texture_index(draw_top_texture()),
-                                          draw_get_clip_mask_index(draw_top_clip_mask())
-                                          );
+                                          draw_get_clip_mask_index(draw_top_clip_mask()));
     
 	draw_auto_pop_stacks();
 }
@@ -752,8 +744,8 @@ draw_line(vec2_t p0, vec2_t p1) {
     
 	instance->bbox = bbox;
     
-	instance->color0 = draw_top_color0().vec;
-	instance->color1 = draw_top_color1().vec;
+	instance->color0 = draw_top_color0();
+	instance->color1 = draw_top_color1();
     
 	instance->point0 = c_p0;
 	instance->point1 = c_p1;
@@ -761,11 +753,9 @@ draw_line(vec2_t p0, vec2_t p1) {
 	instance->thickness = thickness;
 	instance->softness = softness;
     
-	instance->indices = draw_pack_indices(
-                                          draw_shape_line,
+	instance->indices = draw_pack_indices(draw_shape_line,
                                           draw_get_texture_index(draw_top_texture()),
-                                          draw_get_clip_mask_index(draw_top_clip_mask())
-                                          );
+                                          draw_get_clip_mask_index(draw_top_clip_mask()));
     
 	draw_auto_pop_stacks();
 }
@@ -779,21 +769,19 @@ draw_circle(vec2_t pos, f32 radius, f32 start_angle, f32 end_angle) {
     
 	instance->bbox = rect_grow(rect(pos.x - radius, pos.y - radius, pos.x + radius, pos.y + radius), softness);
     
-	instance->color0 = draw_top_color0().vec;
-	instance->color1 = draw_top_color1().vec;
-	instance->color2 = draw_top_color2().vec;
-	instance->color3 = draw_top_color3().vec;
+	instance->color0 = draw_top_color0();
+	instance->color1 = draw_top_color1();
+	instance->color2 = draw_top_color2();
+	instance->color3 = draw_top_color3();
     
 	instance->point0 = vec2(radians(start_angle), radians(end_angle));
 	
 	instance->thickness = draw_top_thickness();
 	instance->softness = softness;
     
-	instance->indices = draw_pack_indices(
-                                          draw_shape_circle,
+	instance->indices = draw_pack_indices(draw_shape_circle,
                                           draw_get_texture_index(draw_top_texture()),
-                                          draw_get_clip_mask_index(draw_top_clip_mask())
-                                          );
+                                          draw_get_clip_mask_index(draw_top_clip_mask()));
     
     
 	draw_auto_pop_stacks();
@@ -820,9 +808,9 @@ draw_tri(vec2_t p0, vec2_t p1, vec2_t p2) {
     
 	instance->bbox = bbox;
     
-	instance->color0 = draw_top_color0().vec;
-	instance->color1 = draw_top_color1().vec;
-	instance->color2 = draw_top_color2().vec;
+	instance->color0 = draw_top_color0();
+	instance->color1 = draw_top_color1();
+	instance->color2 = draw_top_color2();
     
 	instance->point0 = c_p0;
 	instance->point1 = c_p1;
@@ -833,11 +821,9 @@ draw_tri(vec2_t p0, vec2_t p1, vec2_t p2) {
 	instance->thickness = draw_top_thickness();
 	instance->softness = softness;
     
-	instance->indices = draw_pack_indices(
-                                          draw_shape_tri,
+	instance->indices = draw_pack_indices(draw_shape_tri,
                                           draw_get_texture_index(draw_top_texture()),
-                                          draw_get_clip_mask_index(draw_top_clip_mask())
-                                          );
+                                          draw_get_clip_mask_index(draw_top_clip_mask()));
     
     
 	draw_auto_pop_stacks();
@@ -859,16 +845,14 @@ draw_text(str_t text, vec2_t pos) {
 		instance->bbox = rect(pos.x, pos.y, pos.x + glyph->pos.x1, pos.y + glyph->pos.y1);
 		instance->tex = glyph->uv;
         
-		instance->color0 = draw_top_color0().vec;
-		instance->color1 = draw_top_color1().vec;
-		instance->color2 = draw_top_color2().vec;
-		instance->color3 = draw_top_color3().vec;
+		instance->color0 = draw_top_color0();
+		instance->color1 = draw_top_color1();
+		instance->color2 = draw_top_color2();
+		instance->color3 = draw_top_color3();
         
-		instance->indices = draw_pack_indices(
-                                              draw_shape_rect,
+		instance->indices = draw_pack_indices(draw_shape_rect,
                                               draw_get_texture_index(font_state.atlas_texture),
-                                              draw_get_clip_mask_index(draw_top_clip_mask())
-                                              );
+                                              draw_get_clip_mask_index(draw_top_clip_mask()));
         
 		pos.x += glyph->advance;
 	}

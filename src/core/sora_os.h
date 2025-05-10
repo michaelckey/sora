@@ -173,7 +173,8 @@ enum os_cursor {
 typedef u32 os_window_flags;
 enum {
 	os_window_flag_null,
-	os_window_flag_borderless = (1 << 0),
+    os_window_flag_maximize = (1 << 0),
+	os_window_flag_borderless = (1 << 1),
 };
 
 typedef i32 os_sys_color;
@@ -251,7 +252,7 @@ struct os_system_info_t {
 // state (implemented per backends)
 function void             os_init();
 function void             os_release();
-function void             os_update();
+function void             os_get_events();
 function void             os_abort(u32 exit_code);
 function void             os_sleep(u32 ms);
 function u64              os_time_microseconds();
@@ -322,6 +323,7 @@ function void         os_file_close(os_handle_t file);
 function str_t        os_file_read_range(arena_t* arena, os_handle_t file, u32 min, u32 max);
 function str_t        os_file_read_all(arena_t* arena, str_t filepath);
 function str_t        os_file_read_all(arena_t* arena, os_handle_t file);
+function u32          os_file_write(os_handle_t file, u32 index, void* data, u32 data_size);
 
 // file info (implemented per backend)
 function os_file_info_t os_file_get_info(os_handle_t file);

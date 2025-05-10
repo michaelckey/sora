@@ -10,18 +10,23 @@
 function void
 ui_init() {
     
+    // load icon font
+    ui_font_icon = font_open(str("res/fonts/icons.ttf"));
+    ui_font_default = font_open(str("res/fonts/consola.ttf"));
+    
 }
 
 function void
 ui_release() {
-    
+    font_close(ui_font_icon);
+    font_close(ui_font_default);
 }
 
 function void 
 ui_begin(ui_context_t* context) {
     prof_begin("ui_begin");
     
-    ui_active_context = context;
+    ui_context_set_active(context);
     
     // reset stacks
 #define ui_stack(name, type)\
@@ -31,9 +36,29 @@ context->name##_stack.auto_pop = false;
     ui_stack_list
 #undef ui_stack
     
+#define ui_r_stack(name, type)\
+context->name##_r_stack.top = &context->name##_r_default_node;\
+context->name##_r_stack.free = nullptr;\
+context->name##_r_stack.auto_pop = false;
+    ui_r_stack_list
+#undef ui_r_stack
+    
+    // reset texture list
+    memset(context->texture_list, 0, sizeof(gfx_handle_t) * ui_r_max_textures);
+    context->texture_count = 0;
+    
+    memset(context->constants.clip_masks, 0, sizeof(rect_t) * 128);
+    context->clip_mask_count = 0;
+    
     // reset build state
     context->tags_hash_list_count = 512;
-    context->tags_hash_list = (ui_tags_hash_list_t*)arena_alloc(ui_build_arena(), sizeof(ui_tags_hash_list_t) * context->tags_hash_list_count);
+    context->tags_hash_list = (ui_tags_hash_list_t*)arena_calloc(ui_build_arena(), sizeof(ui_tags_hash_list_t) * context->tags_hash_list_count);
+    
+    // copy to prev key state
+    context->key_hovered_prev = context->key_hovered;
+    for (i32 i = 0; i < os_mouse_button_count; i++) {
+        context->key_active_prev[i] = context->key_active[i];
+    }
     
     // reset keys
     context->key_hovered = { 0 };
@@ -46,8 +71,9 @@ context->name##_stack.auto_pop = false;
     
     // gather events
     
-    vec2_t mouse_pos = os_window_get_cursor_pos(context->window);
-    context->mouse_pos = mouse_pos;
+    vec2_t last_mouse_pos = context->mouse_pos;
+    context->mouse_pos = os_window_get_cursor_pos(context->window);
+    context->mouse_delta = vec2_sub(context->mouse_pos, last_mouse_pos);
     
     for (os_event_t* os_event = os_state.event_list.first; os_event != nullptr; os_event = os_event->next) {
         if (os_handle_equals(os_event->window, context->window)) {
@@ -137,6 +163,10 @@ context->name##_stack.auto_pop = false;
     context->node_root = ui_node_from_stringf(0, "root_%u", context->window.data[0]);
     ui_push_parent(context->node_root);
     
+    // push rendering stacks
+    ui_r_push_clip_mask(rect(0.0f, 0.0f, (f32)renderer_size.x, (f32)renderer_size.y));
+    ui_r_push_texture(context->texture);
+    
     prof_end();
 }
 
@@ -224,6 +254,7 @@ ui_end(ui_context_t* context) {
                 }
                 
                 // animate view offset
+                node->view_offset_prev = node->view_offset;
                 node->view_offset.x += context->anim_fast_rate * (node->view_offset_target.x - node->view_offset.x);
                 if (fabsf(node->view_offset_target.x - node->view_offset.x) < 1.0f) { node->view_offset.x = node->view_offset_target.x; }
                 
@@ -250,12 +281,189 @@ ui_end(ui_context_t* context) {
         
     }
     
+    
+    // draw ui 
+    
+    for (ui_node_t* node = context->node_root; node != nullptr;) {
+        ui_node_rec_t rec = ui_node_rec_depth_first(node);
+        
+        // clipping
+        if (node->flags & ui_flag_clip) {
+            rect_t top_clip = ui_r_top_clip_mask();
+            rect_t new_clip = node->rect;
+            if (top_clip.x1 != 0.0f || top_clip.y1 != 0.0f) {
+                new_clip = rect_intersection(new_clip, top_clip);
+            }
+            rect_validate(new_clip);
+            ui_r_push_clip_mask(new_clip);
+        }
+        
+        // shadow
+        if (node->flags & ui_flag_draw_shadow) {
+            ui_r_set_next_color(color(0x00000090));
+            ui_r_set_next_softness(6.0f);
+            ui_r_draw_rect(rect_translate(rect_grow(node->rect, 4.0f), 4.0f));
+        }
+        
+        // background
+        if (node->flags & ui_flag_draw_background) {
+            
+            // colors
+            color_t color_background = ui_color_from_key(ui_key_from_string(node->tags_key, str("background")));
+            color_t color_effect = ui_color_from_key(ui_key_from_string(node->tags_key, str("effect")));
+            
+            if (node->flags & ui_flag_draw_hover_effects) {
+                color_background = color_lerp(color_background, color_blend(color_background, color(0xffffff05)), node->hover_t);
+                color_effect = color_lerp(color_effect, color_blend(color_effect, color(0xffeedd25)), node->hover_t);
+            }
+            
+            if (node->flags & ui_flag_draw_active_effects) {
+                color_background = color_lerp(color_background, color_blend(color_background, color(0xffffff05)), node->active_t);
+                color_effect = color_lerp(color_effect, color_blend(color_effect, color(0xffeedd65)), node->active_t);
+            }
+            
+            // draw main background
+            ui_r_set_next_color(color_background);
+            ui_r_set_next_rounding(node->rounding);
+            ui_r_draw_rect(node->rect);
+            
+            // draw effects
+            if (node->flags & ui_flag_draw_hover_effects | ui_flag_draw_active_effects) {
+                f32 height = rect_height(node->rect);
+                f32 height_top = 0.5f;
+                f32 height_bot = 0.25f;
+                
+                if (ui_key_equals(ui_key_from_string({ 0 }, str("textbox")), node->tags_key)) {
+                    height_top = 0.25f;
+                    height_bot = 0.5f;
+                }
+                
+                rect_t top_rect = rect_cut_bottom(node->rect, roundf(height * height_top));
+                rect_t bottom_rect = rect_cut_top(node->rect, roundf(height * height_bot));
+                color_t color_transparent = color_effect;
+                color_transparent.a = 0.0f;
+                
+                ui_r_set_next_color0(color_transparent);
+                ui_r_set_next_color1(color_effect);
+                ui_r_set_next_color2(color_transparent);
+                ui_r_set_next_color3(color_effect);
+                ui_r_set_next_rounding(vec4(node->rounding.x, 0.0f, node->rounding.z, 0.0f));
+                ui_r_draw_rect(top_rect);
+                
+                ui_r_set_next_color0(color_effect);
+                ui_r_set_next_color1(color_transparent);
+                ui_r_set_next_color2(color_effect);
+                ui_r_set_next_color3(color_transparent);
+                ui_r_set_next_rounding(vec4(0.0f, node->rounding.y, 0.0f, node->rounding.w));
+                ui_r_draw_rect(bottom_rect);
+            }
+            
+        }
+        
+        // border
+        if (node->flags & ui_flag_draw_border) {
+            
+            color_t border_main_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("border")));
+            color_t border_highlight_color = color_blend(border_main_color, color(0xffffff35));
+            color_t border_lowlight_color = color_blend(border_main_color, color(0x00000035));
+            
+            ui_r_set_next_color0(border_main_color);
+            ui_r_set_next_color1(border_main_color);
+            ui_r_set_next_color2(border_highlight_color);
+            ui_r_set_next_color3(border_lowlight_color);
+            ui_r_set_next_rounding(node->rounding);
+            ui_r_set_next_thickness(1.0f);
+            ui_r_draw_rect(rect_shrink(node->rect, 1.0f));
+            
+            color_t border_dark_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("background")));
+            border_dark_color = color(0x131313ff);
+            
+            ui_r_set_next_color(border_dark_color);
+            ui_r_set_next_rounding(node->rounding);
+            ui_r_set_next_thickness(1.0f);
+            ui_r_draw_rect(node->rect);
+        }
+        
+        // text
+        if (node->flags & ui_flag_draw_text) {
+            color_t shadow_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("shadow")));
+            color_t text_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("text")));
+            vec2_t text_pos = ui_text_align(node->font, node->font_size, node->label, node->rect, node->text_alignment);
+            
+            ui_r_push_font(node->font);
+            ui_r_push_font_size(node->font_size);
+            
+            ui_r_set_next_color(shadow_color);
+            ui_r_draw_text(node->label, vec2_add(text_pos, 1.0f));
+            
+            ui_r_set_next_color(text_color);
+            ui_r_draw_text(node->label, text_pos);
+            
+            ui_r_pop_font();
+            ui_r_pop_font_size();
+        }
+        
+        // custom draw
+        if (node->flags & ui_flag_draw_custom) {
+            if (node->custom_draw_func != nullptr) {
+                node->custom_draw_func(node);
+            }
+        }
+        
+        // pop clipping
+        i32 pop_index = 0;
+        for (ui_node_t* n = node; n != nullptr && pop_index <= rec.pop_count; n = n->tree_parent) {
+            pop_index++;
+            if (n == node && rec.push_count != 0) { continue; }
+            if (n->flags & ui_flag_clip) { ui_r_pop_clip_mask(); }
+        }
+        
+        node = rec.next;
+    }
+    
+    
+    // render ui
+    
+    // update constant buffer
+    uvec2_t renderer_size = gfx_renderer_get_size(context->renderer);
+    rect_t viewport = rect(0.0f, 0.0f, (f32)renderer_size.x, (f32)renderer_size.y);
+    context->constants.window_size = vec2((f32)renderer_size.x, (f32)renderer_size.y);
+    
+    gfx_buffer_fill(context->constant_buffer, &context->constants, sizeof(ui_r_constants_t));
+    
+    // set state
+    gfx_set_viewport(viewport);
+    gfx_set_scissor(viewport);
+    gfx_set_rasterizer(gfx_fill_solid, gfx_cull_back);
+    gfx_set_topology(gfx_topology_tri_strip);
+    gfx_set_sampler(gfx_filter_linear, gfx_wrap_repeat, 0);
+    gfx_set_depth_mode(gfx_depth_none);
+    gfx_set_shader(context->vertex_shader);
+    gfx_set_shader(context->pixel_shader);
+    gfx_set_buffer(context->constant_buffer);
+    gfx_set_texture_array(context->texture_list, context->texture_count, 0);
+    
+    for (ui_r_batch_t* batch = context->batch_first; batch != 0; batch = batch->next) {
+        
+        // fill instance buffer
+        gfx_buffer_fill(context->instance_buffer, batch->instances, batch->instance_count * sizeof(ui_r_instance_t));
+        gfx_set_buffer(context->instance_buffer, 0, sizeof(ui_r_instance_t));
+        
+        gfx_draw_instanced(4, batch->instance_count);
+    }
+    
+    
+    // clear batches
+    arena_clear(context->batch_arena);
+    context->batch_first = nullptr;
+    context->batch_last = nullptr;
+    
     context->build_index++;
     arena_clear(ui_build_arena());
     arena_clear(context->event_arena);
     context->event_list.first = nullptr;
     context->event_list.last = nullptr;
-    ui_active_context = nullptr;
+    ui_context_set_active(nullptr);
     
     prof_end();
 }
@@ -293,14 +501,38 @@ ui_context_create(os_handle_t window, gfx_handle_t renderer) {
     context->theme_pattern_hash_list_count = 512;
     context->theme_pattern_hash_list = (ui_theme_pattern_hash_list_t*)arena_alloc(arena, sizeof(ui_theme_pattern_hash_list_t) * context->theme_pattern_hash_list_count);
     
+    // rendering
+    context->batch_arena = arena_create(megabytes(64));
+    
+    context->vertex_shader = gfx_shader_load(str("res/shaders/shader_ui.hlsl"), gfx_shader_flag_vertex | gfx_shader_flag_per_instance);
+    context->pixel_shader = gfx_shader_load(str("res/shaders/shader_ui.hlsl"), gfx_shader_flag_pixel);
+    
+    context->instance_buffer = gfx_buffer_create(gfx_buffer_type_vertex, kilobytes(256));
+    context->constant_buffer = gfx_buffer_create(gfx_buffer_type_constant, kilobytes(4));
+    
+    u32 data = 0xffffffff;
+    context->texture = gfx_texture_create(uvec2(1, 1), gfx_texture_format_rgba8, &data);
+    
+    // theme
+    ui_context_add_color(context, str("background"), color(0x252629ff));
+    ui_context_add_color(context, str("shadow"), color(0x00000080));
+    ui_context_add_color(context, str("text"), color(0xe2e2e3ff));
+    ui_context_add_color(context, str("border"), color(0xffffff35));
+    ui_context_add_color(context, str("effect"), color(0x393a3fff));
+    
     // default stack values
 #define ui_stack(name, type, initial)\
 context->name##_default_node.v = initial;
     ui_stack_list
 #undef ui_stack
     
+#define ui_r_stack(name, type, initial)\
+context->name##_r_default_node.v = initial;
+    ui_r_stack_list
+#undef ui_r_stack
+    
     // key bindings
-    ui_active_context = context;
+    ui_context_set_active(context);
     
     ui_key_binding_add(os_key_left,  0, ui_event_type_navigate, 0, ui_event_delta_unit_char, { -1, 0 } );
     ui_key_binding_add(os_key_right, 0, ui_event_type_navigate, 0, ui_event_delta_unit_char, { +1, 0 } );
@@ -339,18 +571,59 @@ context->name##_default_node.v = initial;
     ui_key_binding_add(os_key_delete,    os_modifier_ctrl, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_word, { +1, 0 } );
     ui_key_binding_add(os_key_backspace, os_modifier_ctrl, ui_event_type_edit, ui_event_flag_delete | ui_event_flag_zero_delta, ui_event_delta_unit_word, { -1, 0 } );
     
-    ui_active_context = nullptr;
+    ui_context_set_active(nullptr);
     
     return context;
 }
 
 function void 
 ui_context_release(ui_context_t* context) {
+    
+    gfx_texture_release(context->texture);
+    
+    gfx_buffer_release(context->instance_buffer);
+    gfx_buffer_release(context->constant_buffer);
+    
+    arena_release(context->batch_arena);
     arena_release(context->event_arena);
     arena_release(context->drag_state_arena);
     arena_release(context->build_arenas[0]);
     arena_release(context->build_arenas[1]);
     arena_release(context->arena);
+}
+
+function void
+ui_context_add_color(ui_context_t* context, str_t tags, color_t color) {
+    
+    temp_t scratch = scratch_begin();
+    
+    // break up string by spaces.
+    str_t delim = str(" ");
+    str_list_t str_list = str_split(scratch.arena, tags, delim.data, 1);
+    
+    // make key based on tags
+    ui_key_t prev_key = { 0 };
+    ui_key_t current_key = { 0 };
+    for (str_node_t* node = str_list.first; node != nullptr; node = node->next) {
+        current_key = ui_key_from_string(prev_key, node->string); 
+        prev_key = current_key;
+    }
+    
+    // add theme pattern
+    ui_theme_pattern_t* theme_pattern = (ui_theme_pattern_t*)arena_alloc(context->arena, sizeof(ui_theme_pattern_t));
+    theme_pattern->key = current_key;
+    theme_pattern->color = color;
+    
+    u32 index = current_key.data[0] % context->theme_pattern_hash_list_count;
+    ui_theme_pattern_hash_list_t* hash_list = &context->theme_pattern_hash_list[index];
+    dll_push_back(hash_list->first, hash_list->last, theme_pattern);
+    
+    scratch_end(scratch);
+}
+
+function void
+ui_context_set_active(ui_context_t* context) {
+    ui_active_context = context;
 }
 
 //- key functions  
@@ -393,6 +666,26 @@ ui_key_equals(ui_key_t a, ui_key_t b) {
     b8 result = (a.data[0] == b.data[0]);
     return result;
 }
+
+function b8
+ui_key_is_hovered(ui_key_t key) {
+    return ui_key_equals(ui_active_context->key_hovered, key);
+}
+
+function b8
+ui_key_is_active(ui_key_t key) {
+    b8 result =
+        ui_key_equals(ui_active_context->key_active[0], key) ||
+        ui_key_equals(ui_active_context->key_active[1], key) ||
+        ui_key_equals(ui_active_context->key_active[2], key);
+    return result;
+}
+
+function b8
+ui_key_is_focused(ui_key_t key) {
+    return ui_key_equals(ui_active_context->key_focused, key);
+}
+
 
 //- size functions 
 
@@ -1007,6 +1300,22 @@ ui_node_from_key(ui_node_flags flags, ui_key_t key) {
     node->font = ui_top_font();
     node->font_size = ui_top_font_size();
     
+    if (node->pos_fixed.x != 0.0f) {
+        node->flags |= ui_flag_fixed_pos_x;
+    }
+    
+    if (node->pos_fixed.y != 0.0f) {
+        node->flags |= ui_flag_fixed_pos_y;
+    }
+    
+    if (node->size_fixed.x != 0.0f) {
+        node->flags |= ui_flag_fixed_size_x;
+    }
+    
+    if (node->size_fixed.y != 0.0f) {
+        node->flags |= ui_flag_fixed_size_y;
+    }
+    
     // tags
     node->tags_key = { 0 };
     if (ui_active_context->tags_stack_top != nullptr) {
@@ -1060,7 +1369,7 @@ ui_node_rec_depth_first(ui_node_t* node) {
 }
 
 function void 
-ui_node_set_custom_draw_func(ui_node_t* node, ui_node_custom_draw_func* func, void* data) {
+ui_node_set_custom_draw(ui_node_t* node, ui_node_custom_draw_func* func, void* data) {
     node->custom_draw_func = func;
     node->custom_draw_data = data;
 }
@@ -1278,7 +1587,7 @@ ui_layout_set_positions(ui_node_t* node, ui_axis axis) {
         layout_pos = node->size[axis] - node->padding[axis];
     }
     
-    f32 parent_pos = node->pos[axis];
+    f32 parent_pos = node->rect.v0[axis];
     
     for (ui_node_t* child = node->tree_first; child != nullptr; child = child->tree_next) {
         
@@ -1402,7 +1711,7 @@ ui_interaction_from_node(ui_node_t* node) {
             }
             
             // mouse scroll event
-            if (event->type == ui_event_type_mouse_scroll) {
+            if (event->type == ui_event_type_mouse_scroll  && mouse_in_bounds) {
                 
                 // scrollable
                 if (node->flags & ui_flag_scrollable) {
@@ -1508,6 +1817,328 @@ ui_interaction_from_node(ui_node_t* node) {
     return result;
     
 }
+
+
+//- renderer functions
+
+
+function ui_r_instance_t*
+ui_r_get_instance() {
+    
+	// find a batch
+	ui_r_batch_t* batch = nullptr;
+    
+	// search batch list
+	for (ui_r_batch_t* b = ui_active_context->batch_first; b != 0; b = b->next) {
+        
+		// if batch has space, and texture matches
+		if (((b->instance_count + 1) * sizeof(ui_r_instance_t)) < (kilobytes(256))) {
+			batch = b;
+			break;
+		}
+	}
+    
+	// else create one
+	if (batch == nullptr) {
+        
+		batch = (ui_r_batch_t*)arena_alloc(ui_active_context->batch_arena, sizeof(ui_r_batch_t));
+		
+		batch->instances = (ui_r_instance_t*)arena_alloc(ui_active_context->batch_arena, kilobytes(256));
+		batch->instance_count = 0;
+		
+		// add to batch list
+		dll_push_back(ui_active_context->batch_first, ui_active_context->batch_last, batch);
+        
+	}
+    
+	// get instance
+	ui_r_instance_t* instance = &batch->instances[batch->instance_count++];
+	memset(instance, 0, sizeof(ui_r_instance_t));
+    
+	return instance;
+}
+
+function i32
+ui_r_get_texture_index(gfx_handle_t texture) {
+    
+	// find index if in list
+	i32 index = 0;
+	for (; index < ui_active_context->texture_count; index++) {
+		if (gfx_handle_equals(texture, ui_active_context->texture_list[index])) {
+			break;
+		}
+	}
+    
+	// we didn't find one, add to list
+	if (index == ui_active_context->texture_count) {
+		ui_active_context->texture_list[ui_active_context->texture_count] = texture;
+		ui_active_context->texture_count++;
+	}
+    
+	return index;
+    
+}
+
+function i32
+ui_r_get_clip_mask_index(rect_t rect) {
+    
+	// find index if in list
+	i32 index = 0;
+	for (; index < ui_active_context->clip_mask_count; index++) {
+		if (rect_equals(rect, ui_active_context->constants.clip_masks[index])) {
+			break;
+		}
+	}
+    
+	// we didn't find one, add to list
+	if (index == ui_active_context->clip_mask_count) {
+		ui_active_context->constants.clip_masks[ui_active_context->clip_mask_count] = rect;
+		ui_active_context->clip_mask_count++;
+	}
+    
+	return index;
+}
+
+inlnfunc u32
+ui_r_pack_indices(u32 shape, u32 texture, u32 clip) {
+	return (shape << 24) | (texture << 16) | (clip << 8);
+}
+
+
+function void 
+ui_r_draw_rect(rect_t rect) {
+    
+	ui_r_instance_t* instance = ui_r_get_instance();
+    
+	rect_validate(rect);
+    
+	instance->bbox = rect;
+	instance->tex = {0.0f, 0.0f, 1.0f, 1.0f};
+	
+	instance->color0 = ui_r_top_color0();
+	instance->color1 = ui_r_top_color1();
+	instance->color2 = ui_r_top_color2();
+	instance->color3 = ui_r_top_color3();
+    
+	instance->radii = ui_r_top_rounding();
+	instance->thickness = ui_r_top_thickness();
+	instance->softness = ui_r_top_softness();
+    
+	instance->indices = ui_r_pack_indices(ui_r_shape_rect,
+                                          ui_r_get_texture_index(ui_r_top_texture()),
+                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    
+	ui_r_auto_pop_stacks();
+}
+
+function void
+ui_r_draw_image(rect_t rect) {
+    
+	ui_r_instance_t* instance = ui_r_get_instance();
+    
+	rect_validate(rect);
+    
+	instance->bbox = rect;
+	instance->tex = { 0.0f, 0.0f, 1.0f, 1.0f };
+    
+	instance->color0 = ui_r_top_color0();
+	instance->color1 = ui_r_top_color1();
+	instance->color2 = ui_r_top_color2();
+	instance->color3 = ui_r_top_color3();
+    
+	instance->radii = ui_r_top_rounding();
+	instance->thickness = ui_r_top_thickness();
+	instance->softness = ui_r_top_softness();
+    
+	instance->indices = ui_r_pack_indices(ui_r_shape_rect,
+                                          ui_r_get_texture_index(ui_r_top_texture()),
+                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    
+	ui_r_auto_pop_stacks();
+    
+}
+
+function void
+ui_r_draw_quad(vec2_t p0, vec2_t p1, vec2_t p2, vec2_t p3) {
+    
+	// order: (0, 0), (0, 1), (1, 1), (1, 0);
+    
+	ui_r_instance_t* instance = ui_r_get_instance();
+    
+	f32 softness = ui_r_top_softness();
+    
+	f32 min_x = min(min(min(p0.x, p1.x), p2.x), p3.x);
+	f32 min_y = min(min(min(p0.y, p1.y), p2.y), p3.y);
+	f32 max_x = max(max(max(p0.x, p1.x), p2.x), p3.x);
+	f32 max_y = max(max(max(p0.y, p1.y), p2.y), p3.y);
+    
+	rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness);
+    
+	vec2_t c = rect_center(bbox);
+	vec2_t c_p0 = vec2_sub(p0, c);
+	vec2_t c_p1 = vec2_sub(p1, c);
+	vec2_t c_p2 = vec2_sub(p2, c);
+	vec2_t c_p3 = vec2_sub(p3, c);
+    
+	instance->bbox = bbox;
+    
+	instance->color0 = ui_r_top_color0();
+	instance->color1 = ui_r_top_color1();
+	instance->color2 = ui_r_top_color2();
+	instance->color3 = ui_r_top_color3();
+    
+	instance->point0 = c_p0;
+	instance->point1 = c_p1;
+	instance->point2 = c_p2;
+	instance->point3 = c_p3;
+    
+	instance->thickness = ui_r_top_thickness();
+	instance->softness = softness;
+    
+	instance->indices = ui_r_pack_indices(ui_r_shape_quad,
+                                          ui_r_get_texture_index(ui_r_top_texture()),
+                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    
+	ui_r_auto_pop_stacks();
+}
+
+function void
+ui_r_draw_line(vec2_t p0, vec2_t p1) {
+    
+	ui_r_instance_t* instance = ui_r_get_instance();
+    
+	f32 thickness = ui_r_top_thickness();
+	f32 softness = ui_r_top_softness();
+    
+	f32 min_x = min(p0.x, p1.x);
+	f32 min_y = min(p0.y, p1.y);
+	f32 max_x = max(p0.x, p1.x);
+	f32 max_y = max(p0.y, p1.y);
+    
+	rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness + thickness + 2.0f);
+    
+	vec2_t c = rect_center(bbox);
+	vec2_t c_p0 = vec2_sub(c, p0);
+	vec2_t c_p1 = vec2_sub(c, p1);
+    
+	instance->bbox = bbox;
+    
+	instance->color0 = ui_r_top_color0();
+	instance->color1 = ui_r_top_color1();
+    
+	instance->point0 = c_p0;
+	instance->point1 = c_p1;
+    
+	instance->thickness = thickness;
+	instance->softness = softness;
+    
+	instance->indices = ui_r_pack_indices(ui_r_shape_line,
+                                          ui_r_get_texture_index(ui_r_top_texture()),
+                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    
+	ui_r_auto_pop_stacks();
+}
+
+function void 
+ui_r_draw_circle(vec2_t pos, f32 radius, f32 start_angle, f32 end_angle) {
+	
+	ui_r_instance_t* instance = ui_r_get_instance();
+	
+	f32 softness = ui_r_top_softness();
+    
+	instance->bbox = rect_grow(rect(pos.x - radius, pos.y - radius, pos.x + radius, pos.y + radius), softness);
+    
+	instance->color0 = ui_r_top_color0();
+	instance->color1 = ui_r_top_color1();
+	instance->color2 = ui_r_top_color2();
+	instance->color3 = ui_r_top_color3();
+    
+	instance->point0 = vec2(radians(start_angle), radians(end_angle));
+	
+	instance->thickness = ui_r_top_thickness();
+	instance->softness = softness;
+    
+	instance->indices = ui_r_pack_indices(ui_r_shape_circle,
+                                          ui_r_get_texture_index(ui_r_top_texture()),
+                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    
+    
+	ui_r_auto_pop_stacks();
+} 
+
+function void
+ui_r_draw_tri(vec2_t p0, vec2_t p1, vec2_t p2) {
+    
+	ui_r_instance_t* instance = ui_r_get_instance();
+    
+	f32 softness = ui_r_top_softness();
+    
+	f32 min_x = min(min(p0.x, p1.x), p2.x);
+	f32 min_y = min(min(p0.y, p1.y), p2.y);
+	f32 max_x = max(max(p0.x, p1.x), p2.x);
+	f32 max_y = max(max(p0.y, p1.y), p2.y);
+    
+	rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness * 5.0f);
+    
+	vec2_t c = rect_center(bbox);
+	vec2_t c_p0 = vec2_sub(p0, c);
+	vec2_t c_p1 = vec2_sub(p1, c);
+	vec2_t c_p2 = vec2_sub(p2, c);
+    
+	instance->bbox = bbox;
+    
+	instance->color0 = ui_r_top_color0();
+	instance->color1 = ui_r_top_color1();
+	instance->color2 = ui_r_top_color2();
+    
+	instance->point0 = c_p0;
+	instance->point1 = c_p1;
+	instance->point2 = c_p2;
+    
+	instance->radii = ui_r_top_rounding();
+    
+	instance->thickness = ui_r_top_thickness();
+	instance->softness = softness;
+    
+	instance->indices = ui_r_pack_indices(ui_r_shape_tri,
+                                          ui_r_get_texture_index(ui_r_top_texture()),
+                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    
+    
+	ui_r_auto_pop_stacks();
+}
+
+function void
+ui_r_draw_text(str_t text, vec2_t pos) {
+    
+	f32 font_size = ui_r_top_font_size();
+	font_handle_t font = ui_r_top_font();
+    
+	for (u32 i = 0; i < text.size; i++) {
+        
+		ui_r_instance_t* instance = ui_r_get_instance();
+		
+		u8 codepoint = *(text.data + i);
+		font_glyph_t* glyph = font_get_glyph(font, font_size, codepoint);
+        
+		instance->bbox = rect(pos.x, pos.y, pos.x + glyph->pos.x1, pos.y + glyph->pos.y1);
+		instance->tex = glyph->uv;
+        
+		instance->color0 = ui_r_top_color0();
+		instance->color1 = ui_r_top_color1();
+		instance->color2 = ui_r_top_color2();
+		instance->color3 = ui_r_top_color3();
+        
+		instance->indices = ui_r_pack_indices(ui_r_shape_rect,
+                                              ui_r_get_texture_index(font_state.atlas_texture),
+                                              ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+        
+		pos.x += glyph->advance;
+	}
+    
+	ui_r_auto_pop_stacks();
+}
+
 
 
 //- stack functions 
@@ -1685,6 +2316,15 @@ function f32 ui_push_font_size(f32 v) { ui_stack_push_impl(font_size, f32) }
 function f32 ui_pop_font_size() { ui_stack_pop_impl(font_size, f32, 0.0f) }
 function f32 ui_set_next_font_size(f32 v) { ui_stack_set_next_impl(font_size, f32) }
 
+function ui_key_t 
+ui_top_tags_key() {
+    ui_key_t result = { 0 };
+    if (ui_active_context->tags_stack_top != nullptr) {
+        result = ui_active_context->tags_stack_top->key;
+    }
+    return result;
+}
+
 function str_t ui_top_tag() { ui_stack_top_impl(tag, str_t) }
 
 // tags
@@ -1843,42 +2483,36 @@ ui_set_next_size(ui_size_t size_x, ui_size_t size_y) {
 
 function void 
 ui_push_fixed_size(f32 x, f32 y) {
-    ui_push_flags(ui_flag_fixed_size);
     ui_push_fixed_size_x(x);
     ui_push_fixed_size_y(y);
 }
 
 function void 
 ui_pop_fixed_size() {
-    ui_pop_flags();
     ui_pop_fixed_size_x();
     ui_pop_fixed_size_y();
 }
 
 function void 
 ui_set_next_fixed_size(f32 x, f32 y) {
-    ui_set_next_flags(ui_flag_fixed_size);
     ui_set_next_fixed_size_x(x);
     ui_set_next_fixed_size_y(y);
 }
 
 function void 
 ui_push_fixed_pos(f32 x, f32 y) {
-    ui_push_flags(ui_flag_fixed_pos);
     ui_push_fixed_pos_x(x);
     ui_push_fixed_pos_y(y);
 }
 
 function void 
 ui_pop_fixed_pos() {
-    ui_pop_flags();
     ui_pop_fixed_pos_x();
     ui_pop_fixed_pos_y();
 }
 
 function void 
 ui_set_next_fixed_pos(f32 x, f32 y) {
-    ui_set_next_flags(ui_flag_fixed_pos);
     ui_set_next_fixed_pos_x(x);
     ui_set_next_fixed_pos_y(y);
 }
@@ -1886,7 +2520,6 @@ ui_set_next_fixed_pos(f32 x, f32 y) {
 
 function void 
 ui_push_rect(rect_t rect) {
-    ui_push_flags(ui_flag_fixed_pos | ui_flag_fixed_size);
     ui_push_fixed_pos_x(rect.x0);
     ui_push_fixed_pos_y(rect.y0);
     ui_push_fixed_size_x(rect.x1 - rect.x0);
@@ -1895,7 +2528,6 @@ ui_push_rect(rect_t rect) {
 
 function void
 ui_pop_rect() {
-    ui_pop_flags();
     ui_pop_fixed_pos_x();
     ui_pop_fixed_pos_y();
     ui_pop_fixed_size_x();
@@ -1904,7 +2536,6 @@ ui_pop_rect() {
 
 function void 
 ui_set_next_rect(rect_t rect) {
-    ui_set_next_flags(ui_flag_fixed_pos | ui_flag_fixed_size);
     ui_set_next_fixed_pos_x(rect.x0);
     ui_set_next_fixed_pos_y(rect.y0);
     ui_set_next_fixed_size_x(rect.x1 - rect.x0);
@@ -1934,6 +2565,222 @@ ui_set_next_rounding(vec4_t rounding) {
     ui_set_next_rounding_01(rounding.y);
     ui_set_next_rounding_10(rounding.z);
     ui_set_next_rounding_11(rounding.w);
+}
+
+function void 
+ui_push_padding(f32 padding) {
+    ui_push_padding_x(padding);
+    ui_push_padding_y(padding);
+}
+
+function void 
+ui_pop_padding() {
+    ui_pop_padding_x();
+    ui_pop_padding_y();
+}
+
+function void 
+ui_set_next_padding(f32 padding) {
+    ui_set_next_padding_x(padding);
+    ui_set_next_padding_y(padding);
+}
+
+//- renderer stacks
+
+
+function void 
+ui_r_auto_pop_stacks() {
+#define ui_r_stack(name, type) if (ui_active_context->name##_r_stack.auto_pop) { ui_r_pop_##name(); ui_active_context->name##_r_stack.auto_pop = false; };
+    ui_r_stack_list
+#undef ui_r_stack
+}
+
+#define ui_r_stack_top_impl(name, type)\
+return ui_active_context->name##_r_stack.top->v;
+
+#define ui_r_stack_push_impl(name, type)\
+ui_r_##name##_node_t* node = ui_active_context->name##_r_stack.free;\
+if (node != nullptr) {\
+stack_pop(ui_active_context->name##_r_stack.free);\
+} else {\
+node = (ui_r_##name##_node_t*)arena_alloc(ui_build_arena(), sizeof(ui_r_##name##_node_t));\
+}\
+type old_value = ui_active_context->name##_r_stack.top->v; node->v = v;\
+stack_push(ui_active_context->name##_r_stack.top, node);\
+ui_active_context->name##_r_stack.auto_pop = false;\
+return old_value;
+
+
+#define ui_r_stack_pop_impl(name, type, default)\
+ui_r_##name##_node_t* popped = ui_active_context->name##_r_stack.top;\
+type result = default;\
+if (popped != nullptr) {\
+result = popped->v;\
+stack_pop(ui_active_context->name##_r_stack.top);\
+stack_push(ui_active_context->name##_r_stack.free, popped);\
+ui_active_context->name##_r_stack.auto_pop = false;\
+}\
+return result;
+
+
+#define ui_r_stack_set_next_impl(name, type)\
+ui_r_##name##_node_t* node = ui_active_context->name##_r_stack.free;\
+if (node != nullptr) {\
+stack_pop(ui_active_context->name##_r_stack.free);\
+} else {\
+node = (ui_r_##name##_node_t*)arena_alloc(ui_build_arena(), sizeof(ui_r_##name##_node_t));\
+}\
+type old_value = ui_active_context->name##_r_stack.top->v;\
+node->v = v;\
+stack_push(ui_active_context->name##_r_stack.top, node);\
+ui_active_context->name##_r_stack.auto_pop = true;\
+return old_value;
+
+function color_t ui_r_top_color0() { ui_r_stack_top_impl(color0, color_t) }
+function color_t ui_r_push_color0(color_t v) { ui_r_stack_push_impl(color0, color_t) }
+function color_t ui_r_pop_color0() { ui_r_stack_pop_impl(color0, color_t, { 0 }) }
+function color_t ui_r_set_next_color0(color_t v) { ui_r_stack_set_next_impl(color0, color_t) }
+
+function color_t ui_r_top_color1() { ui_r_stack_top_impl(color1, color_t) }
+function color_t ui_r_push_color1(color_t v) { ui_r_stack_push_impl(color1, color_t) }
+function color_t ui_r_pop_color1() { ui_r_stack_pop_impl(color1, color_t, { 0 }) }
+function color_t ui_r_set_next_color1(color_t v) { ui_r_stack_set_next_impl(color1, color_t) }
+
+function color_t ui_r_top_color2() { ui_r_stack_top_impl(color2, color_t) }
+function color_t ui_r_push_color2(color_t v) { ui_r_stack_push_impl(color2, color_t) }
+function color_t ui_r_pop_color2() { ui_r_stack_pop_impl(color2, color_t, { 0 }) }
+function color_t ui_r_set_next_color2(color_t v) { ui_r_stack_set_next_impl(color2, color_t) }
+
+function color_t ui_r_top_color3() { ui_r_stack_top_impl(color3, color_t) }
+function color_t ui_r_push_color3(color_t v) { ui_r_stack_push_impl(color3, color_t) }
+function color_t ui_r_pop_color3() { ui_r_stack_pop_impl(color3, color_t, { 0 }) }
+function color_t ui_r_set_next_color3(color_t v) { ui_r_stack_set_next_impl(color3, color_t) }
+
+function f32 ui_r_top_radius0() { ui_r_stack_top_impl(radius0, f32) }
+function f32 ui_r_push_radius0(f32 v) { ui_r_stack_push_impl(radius0, f32) }
+function f32 ui_r_pop_radius0() { ui_r_stack_pop_impl(radius0, f32, 0.0f) }
+function f32 ui_r_set_next_radius0(f32 v) { ui_r_stack_set_next_impl(radius0, f32) }
+
+function f32 ui_r_top_radius1() { ui_r_stack_top_impl(radius1, f32) }
+function f32 ui_r_push_radius1(f32 v) { ui_r_stack_push_impl(radius1, f32) }
+function f32 ui_r_pop_radius1() { ui_r_stack_pop_impl(radius1, f32, 0.0f) }
+function f32 ui_r_set_next_radius1(f32 v) { ui_r_stack_set_next_impl(radius1, f32) }
+
+function f32 ui_r_top_radius2() { ui_r_stack_top_impl(radius2, f32) }
+function f32 ui_r_push_radius2(f32 v) { ui_r_stack_push_impl(radius2, f32) }
+function f32 ui_r_pop_radius2() { ui_r_stack_pop_impl(radius2, f32, 0.0f) }
+function f32 ui_r_set_next_radius2(f32 v) { ui_r_stack_set_next_impl(radius2, f32) }
+
+function f32 ui_r_top_radius3() { ui_r_stack_top_impl(radius3, f32) }
+function f32 ui_r_push_radius3(f32 v) { ui_r_stack_push_impl(radius3, f32) }
+function f32 ui_r_pop_radius3() { ui_r_stack_pop_impl(radius3, f32, 0.0f) }
+function f32 ui_r_set_next_radius3(f32 v) { ui_r_stack_set_next_impl(radius3, f32) }
+
+function f32 ui_r_top_thickness() { ui_r_stack_top_impl(thickness, f32) }
+function f32 ui_r_push_thickness(f32 v) { ui_r_stack_push_impl(thickness, f32) }
+function f32 ui_r_pop_thickness() { ui_r_stack_pop_impl(thickness, f32, 0.0f) }
+function f32 ui_r_set_next_thickness(f32 v) { ui_r_stack_set_next_impl(thickness, f32) }
+
+function f32 ui_r_top_softness() { ui_r_stack_top_impl(softness, f32) }
+function f32 ui_r_push_softness(f32 v) { ui_r_stack_push_impl(softness, f32) }
+function f32 ui_r_pop_softness() { ui_r_stack_pop_impl(softness, f32, 0.0f) }
+function f32 ui_r_set_next_softness(f32 v) { ui_r_stack_set_next_impl(softness, f32) }
+
+function font_handle_t ui_r_top_font() { ui_r_stack_top_impl(font, font_handle_t) }
+function font_handle_t ui_r_push_font(font_handle_t v) { ui_r_stack_push_impl(font, font_handle_t) }
+function font_handle_t ui_r_pop_font() { ui_r_stack_pop_impl(font, font_handle_t, { 0 }) }
+function font_handle_t ui_r_set_next_font(font_handle_t v) { ui_r_stack_set_next_impl(font, font_handle_t) }
+
+function f32 ui_r_top_font_size() { ui_r_stack_top_impl(font_size, f32) }
+function f32 ui_r_push_font_size(f32 v) { ui_r_stack_push_impl(font_size, f32) }
+function f32 ui_r_pop_font_size() { ui_r_stack_pop_impl(font_size, f32, 12.0f) }
+function f32 ui_r_set_next_font_size(f32 v) { ui_r_stack_set_next_impl(font_size, f32) }
+
+function rect_t ui_r_top_clip_mask() { ui_r_stack_top_impl(clip_mask, rect_t) }
+function rect_t ui_r_push_clip_mask(rect_t v) { ui_r_stack_push_impl(clip_mask, rect_t) }
+function rect_t ui_r_pop_clip_mask() { ui_r_stack_pop_impl(clip_mask, rect_t, { 0 }) }
+function rect_t ui_r_set_next_clip_mask(rect_t v) { ui_r_stack_set_next_impl(clip_mask, rect_t) }
+
+function gfx_handle_t ui_r_top_texture() { ui_r_stack_top_impl(texture, gfx_handle_t) }
+function gfx_handle_t ui_r_push_texture(gfx_handle_t v) { ui_r_stack_push_impl(texture, gfx_handle_t) }
+function gfx_handle_t ui_r_pop_texture() { ui_r_stack_pop_impl(texture, gfx_handle_t, { 0 }) }
+function gfx_handle_t ui_r_set_next_texture(gfx_handle_t v) { ui_r_stack_set_next_impl(texture, gfx_handle_t) }
+
+// group stacks
+
+// colors
+function void
+ui_r_push_color(color_t color) {
+	ui_r_push_color0(color);
+	ui_r_push_color1(color);
+	ui_r_push_color2(color);
+	ui_r_push_color3(color);
+}
+
+function void
+ui_r_set_next_color(color_t color) {
+	ui_r_set_next_color0(color);
+	ui_r_set_next_color1(color);
+	ui_r_set_next_color2(color);
+	ui_r_set_next_color3(color);
+}
+
+function void
+ui_r_pop_color() {
+	ui_r_pop_color0();
+	ui_r_pop_color1();
+	ui_r_pop_color2();
+	ui_r_pop_color3();
+}
+
+// rounding
+function vec4_t 
+ui_r_top_rounding() {
+	f32 x = ui_r_top_radius0();
+	f32 y = ui_r_top_radius1();
+	f32 z = ui_r_top_radius2();
+	f32 w = ui_r_top_radius3();
+	return vec4(x, y, z, w);
+}
+
+function void
+ui_r_push_rounding(f32 radius) {
+	ui_r_push_radius0(radius);
+	ui_r_push_radius1(radius);
+	ui_r_push_radius2(radius);
+	ui_r_push_radius3(radius);
+}
+
+function void
+ui_r_push_rounding(vec4_t radii) {
+	ui_r_push_radius0(radii.x);
+	ui_r_push_radius1(radii.y);
+	ui_r_push_radius2(radii.z);
+	ui_r_push_radius3(radii.w);
+}
+
+function void
+ui_r_set_next_rounding(f32 radius) {
+	ui_r_set_next_radius0(radius);
+	ui_r_set_next_radius1(radius);
+	ui_r_set_next_radius2(radius);
+	ui_r_set_next_radius3(radius);
+}
+
+function void
+ui_r_set_next_rounding(vec4_t radii) {
+	ui_r_set_next_radius0(radii.x);
+	ui_r_set_next_radius1(radii.y);
+	ui_r_set_next_radius2(radii.z);
+	ui_r_set_next_radius3(radii.w);
+}
+
+function void
+ui_r_pop_rounding() {
+	ui_r_pop_radius0();
+	ui_r_pop_radius1();
+	ui_r_pop_radius2();
+	ui_r_pop_radius3();
 }
 
 #endif // SORA_UI_CORE_CPP

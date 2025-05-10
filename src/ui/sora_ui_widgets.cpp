@@ -139,7 +139,7 @@ ui_text_edit(ui_text_point_t *cursor, ui_text_point_t* mark, u8* edit_buffer, u3
     if (is_focused) {
         edit_string_node->flags |= ui_flag_draw_custom;
         ui_text_edit_draw_data_t* draw_data = (ui_text_edit_draw_data_t*)arena_alloc(ui_build_arena(), sizeof( ui_text_edit_draw_data_t));
-        ui_node_set_custom_draw_func(edit_string_node, ui_text_edit_draw_func, draw_data);
+        ui_node_set_custom_draw(edit_string_node, ui_text_edit_draw_func, draw_data);
         draw_data->edit_string = edit_string;
         
         // animate
@@ -177,6 +177,164 @@ ui_text_edit(ui_text_point_t *cursor, ui_text_point_t* mark, u8* edit_buffer, u3
     return interaction;
 }
 
+function ui_interaction 
+ui_float_edit(str_t label, f32* value, f32 delta, f32 min, f32 max) {
+    
+    ui_context_t* context = ui_active_context;
+    
+    // keys
+    ui_key_t slider_key = ui_key_from_string(ui_top_seed_key(), label);
+    ui_key_t increment_key = ui_key_from_stringf(slider_key, "%s##increment", label.data);
+    ui_key_t decrement_key = ui_key_from_stringf(slider_key, "%s##decrement", label.data);
+    
+    
+    // create parent
+    ui_node_flags parent_flags = 
+        ui_flag_draw_background |
+        ui_flag_draw_border;
+    
+    ui_set_next_layout_dir(ui_dir_right);
+    ui_node_t* parent_node = ui_node_from_key(parent_flags, { 0 });
+    
+    // determine if we should show arrows
+    b8 hovered = false;
+    ui_key_t last_hovered_key = context->key_hovered_prev;
+    if (ui_key_equals(last_hovered_key, decrement_key) || ui_key_is_active(decrement_key) ||
+        ui_key_equals(last_hovered_key, increment_key) || ui_key_is_active(increment_key) ||
+        ui_key_equals(last_hovered_key, slider_key) || ui_key_is_active(slider_key)) {
+        hovered = true;
+    }
+    
+    ui_push_parent(parent_node);
+    
+    b8 modifier_shift = os_get_modifiers() & os_modifier_shift;
+    f32 adjusted_delta = delta * (modifier_shift ? 10.0f : 1.0f);
+    
+    // decrement and increment flags
+    u32 inc_dec_flags = ui_flag_mouse_interactable;
+    
+    // hide if not hovered
+    if (hovered) {
+        inc_dec_flags |= 
+            ui_flag_draw_background |
+            ui_flag_draw_border |
+            ui_flag_draw_hover_effects |
+            ui_flag_draw_active_effects |
+            ui_flag_draw_text;
+    }
+    
+    // decrement
+    ui_set_next_font(ui_font_icon);
+    ui_set_next_text_alignment(ui_text_align_center);
+    ui_set_next_size(ui_size_pixels(15.0f), ui_size_percent(1.0f));
+    ui_set_next_rounding_00(0.0f);
+    ui_set_next_rounding_01(0.0f);
+    
+    ui_node_t* decrement_node = ui_node_from_key(inc_dec_flags, decrement_key);
+    decrement_node->label = str("N");
+    ui_interaction decrement_interaction = ui_interaction_from_node(decrement_node);
+    
+    if (decrement_interaction & ui_left_clicked) {
+        *value -= adjusted_delta;
+    }
+    
+    // slider/text_edit
+    ui_node_flags slider_flags = ui_flag_interactable | ui_flag_draw_text;
+    
+    if (hovered) {
+        slider_flags |= 
+            ui_flag_draw_background |
+            ui_flag_draw_border |
+            ui_flag_draw_hover_effects |
+            ui_flag_draw_active_effects;
+    }
+    
+    str_t number_text = str_format(ui_build_arena(), "%.2f", *value);
+    ui_set_next_size(ui_size_percent(1.0f), ui_size_percent(1.0f));
+    ui_set_next_text_alignment(ui_text_align_center);
+    ui_set_next_hover_cursor(os_cursor_resize_EW);
+    ui_set_next_rounding(vec4(0.0f));
+    ui_node_t* slider_node = ui_node_from_key(slider_flags, slider_key);
+    slider_node->label = number_text;
+    ui_interaction slider_interaction = ui_interaction_from_node(slider_node);
+    
+    // slider interatcion
+    if (slider_interaction & ui_left_dragging) {
+        *value = *value + (adjusted_delta * context->mouse_delta.x);
+        
+        // don't clamp if everything equals 0.0f
+        if (min != max != 0.0f) {
+            *value = clamp(*value, min, max);
+        }
+    }
+    
+    // increment
+    ui_set_next_font(ui_font_icon);
+    ui_set_next_text_alignment(ui_text_align_center);
+    ui_set_next_size(ui_size_pixels(15.0f), ui_size_percent(1.0f));
+    ui_set_next_rounding_10(0.0f);
+    ui_set_next_rounding_11(0.0f);
+    
+    ui_node_t* increment_node = ui_node_from_key(inc_dec_flags, increment_key);
+    increment_node->label = str("O");
+    ui_interaction increment_interaction = ui_interaction_from_node(increment_node);
+    
+    if (increment_interaction & ui_left_clicked) {
+        *value += adjusted_delta;
+    }
+    
+    ui_pop_parent();
+    
+    ui_interaction interaction = 0;
+    return interaction;
+}
+
+
+
+function ui_interaction 
+ui_color_sv_quad(f32 hue, f32* sat, f32* val, str_t label) {
+    
+    // build node
+    ui_node_flags flags =
+        ui_flag_interactable |
+        ui_flag_draw_border |
+        ui_flag_draw_custom;
+    
+    ui_set_next_hover_cursor(os_cursor_hand_point);
+    ui_key_t node_key = ui_key_from_string(ui_top_seed_key(), label);
+    ui_node_t* node = ui_node_from_key(flags, node_key);
+    
+    // set custom draw function and data
+    vec3_t* hsv_data = (vec3_t*)arena_alloc(ui_build_arena(), sizeof(vec3_t));
+    ui_node_set_custom_draw(node, ui_color_sv_draw_func, hsv_data);
+    
+    // do interaction
+    ui_interaction interaction = ui_interaction_from_node(node);
+    f32 target_sat = *sat;
+    f32 target_val = *val;
+    
+    if (interaction & ui_left_dragging) {
+        vec2_t mouse_pos = ui_active_context->mouse_pos;
+        
+        f32 node_width = rect_width(node->rect);
+        f32 node_height = rect_height(node->rect);
+        
+        target_sat = (mouse_pos.x - node->rect.x0) / node_width;
+        target_val = 1.0f - (mouse_pos.y - node->rect.y0) / node_height;
+        target_sat = clamp_01(target_sat);
+        target_val = clamp_01(target_val);
+    }
+    
+    // animate
+    *sat = ui_anim(ui_key_from_stringf(node_key, "anim_sat"), target_sat, target_sat);
+    *val = ui_anim(ui_key_from_stringf(node_key, "anim_val"), target_val, target_val);
+    
+    // set draw data
+    *hsv_data = vec3(hue, *sat, *val);
+    
+    return interaction;
+    
+}
 
 //- layout functions
 
@@ -210,6 +368,55 @@ ui_column_end() {
     return interaction;
 }
 
+function ui_node_t*
+ui_padding_begin(f32 size) {
+    ui_set_next_padding(size);
+    ui_node_t* node = ui_node_from_key(0, { 0 });
+    ui_push_parent(node);
+    return node;
+}
+
+function ui_interaction
+ui_padding_end() {
+    ui_node_t* node = ui_pop_parent();
+    ui_interaction interaction = ui_interaction_from_node(node);
+    return interaction;
+}
+
+
+function ui_node_t* 
+ui_canvas_begin(str_t label) {
+    
+    ui_node_flags flags = 
+        ui_flag_mouse_interactable |
+        ui_flag_draw_custom |
+        ui_flag_overflow |
+        ui_flag_clip;
+    
+    ui_node_t* node = ui_node_from_string(flags, label);
+    ui_node_set_custom_draw(node, ui_canvas_draw_func, nullptr);
+    
+    ui_push_seed_key(node->key);
+    ui_push_parent(node);
+    
+    return node;
+}
+
+function ui_interaction
+ui_canvas_end() {
+    ui_pop_seed_key();
+    ui_node_t* canvas_node = ui_pop_parent();
+    ui_interaction interaction = ui_interaction_from_node(canvas_node);
+    
+    if (interaction & ui_middle_dragging) {
+        vec2_t mouse_delta = ui_active_context->mouse_delta;
+        canvas_node->view_offset_target.x -= mouse_delta.x;
+        canvas_node->view_offset_target.y -= mouse_delta.y;
+        canvas_node->hover_cursor = os_cursor_resize_all;
+    }
+    
+    return interaction;
+}
 
 //- draw functions 
 
@@ -233,14 +440,76 @@ ui_text_edit_draw_func(ui_node_t* node) {
                               text_pos.x + data->mark_pos + 0.0f, node->rect.y1 - 4.0f);
     
     // draw select
-    draw_set_next_color(color(0x93E7FF80));
-    draw_set_next_rounding(1.0f);
-    draw_rect(select_rect);
+    //draw_set_next_color(color(0x93E7FF80));
+    //draw_set_next_rounding(1.0f);
+    //draw_rect(select_rect);
     
     // draw cursor
-    draw_set_next_color(color(0x93E7FFff));
-    draw_set_next_rounding(1.0f);
-    draw_rect(cursor_rect);
+    //draw_set_next_color(color(0x93E7FFff));
+    //draw_set_next_rounding(1.0f);
+    //draw_rect(cursor_rect);
+    
+}
+
+function void
+ui_color_sv_draw_func(ui_node_t* node) {
+    
+    // get data
+    vec3_t* hsv_color = (vec3_t*)node->custom_draw_data;
+    
+    // convert colors
+    color_t hue_color = color_hsv_to_rgb(color(hsv_color->x, 1.0f, 1.0f, 1.0f));
+    color_t rgb_color = color_hsv_to_rgb(color(hsv_color->x, hsv_color->y, hsv_color->z, 1.0f));
+    
+    // node info
+    f32 node_width = rect_width(node->rect);
+    f32 node_height = rect_height(node->rect);
+    
+    // draw hue quad
+    //draw_set_next_color0(color(0xffffffff));
+    //draw_set_next_color1(color(0x000000ff));
+    //draw_set_next_color2( hue_color);
+    //draw_set_next_color3(color(0x000000ff));
+    //draw_set_next_rounding(node->rounding);
+    //draw_rect(node->rect);
+    
+    // draw indicator
+    vec2_t indicator_pos = vec2(node->rect.x0 + (hsv_color->y * node_width), node->rect.y0 + ((1.0f - hsv_color->z) * node_height));
+    
+    f32 indicator_size = 6.0f;
+    indicator_size = lerp(indicator_size, indicator_size + 2.0f, node->hover_t);
+    indicator_size = lerp(indicator_size, indicator_size + 2.0f, node->active_t);
+    
+    // borders
+    //draw_set_next_color(color(0x151515ff));
+    //draw_circle(indicator_pos, indicator_size + 2.0f, 0.0f, 360.0f);
+    
+    //draw_set_next_color(color(0xe2e2e2ff));
+    //draw_circle(indicator_pos, indicator_size + 1.0f, 0.0f, 360.0f);
+    
+    // color
+    //draw_set_next_color(rgb_color);
+    //draw_circle(indicator_pos, indicator_size, 0.0f, 360.0f);
+    
+    
+}
+
+function void 
+ui_canvas_draw_func(ui_node_t* node) {
+    
+    //draw_set_next_rounding(node->rounding);
+    //draw_set_next_color(color(0x09090aff));
+    //draw_rect(node->rect);
+    
+    f32 offset_x = fmodf(node->view_offset_prev.x, 25.0f);
+	f32 offset_y = fmodf(node->view_offset_prev.y, 25.0f);
+	for (f32 x = node->rect.x0 - offset_x; x < node->rect.x1 - offset_x + 25.0f; x += 25.0f) {
+		for (f32 y = node->rect.y0 - offset_y; y < node->rect.y1 - offset_y + 25.0f; y += 25.0f) {
+            f32 radius = 1.25f;
+            //draw_set_next_color(color(0x303031ff));
+            //draw_circle(vec2(x, y), radius, 0.0f, 360.0f);
+		}
+	}
     
 }
 

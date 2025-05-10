@@ -78,7 +78,7 @@ os_release() {
 }
 
 function void
-os_update() {
+os_get_events() {
     
     // clear event list
     arena_clear(os_state.event_list_arena);
@@ -250,8 +250,13 @@ os_window_open(str_t title, u32 width, u32 height, os_window_flags flags) {
                                      style, CW_USEDEFAULT, CW_USEDEFAULT, adjusted_width, adjusted_height,
                                      nullptr, nullptr, GetModuleHandle(NULL), nullptr);
     os_state.new_borderless_window = false;
-    ShowWindow(window->handle, SW_SHOW);
     
+    // maximize
+    if (flags & os_window_flag_maximize) {
+        ShowWindow(window->handle, SW_MAXIMIZE);
+    } else {
+        ShowWindow(window->handle, SW_SHOW);
+    }
     
     os_handle_t window_handle = os_w32_handle_from_window(window);
     return window_handle;
@@ -524,6 +529,12 @@ os_file_close(os_handle_t file) {
     CloseHandle(handle);
 }
 
+function b8
+os_file_exists(str_t filepath) {
+    DWORD attrs = GetFileAttributesA((char*)filepath.data);
+    return (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY));
+}
+
 function str_t
 os_file_read_range(arena_t* arena, os_handle_t file, u32 start, u32 length) {
     
@@ -579,24 +590,98 @@ os_file_read_all(arena_t* arena, os_handle_t file) {
     return data;
 }
 
+function u32
+os_file_read(os_handle_t file, u32 index, void* data, u32 data_size) {
+    
+    if(os_handle_equals(file, { 0 })) { 
+        return 0;
+    }
+    
+    HANDLE handle = (HANDLE)file.data[0];
+    
+    u32 dst_off = 0;
+    u32 src_off = index;
+    
+    for (;;) {
+        void* bytes_dst = (u8*)data + dst_off;
+        u32 bytes_left = data_size - dst_off;
+        DWORD read_size = min(megabytes(1), bytes_left);
+        DWORD bytes_read = 0;
+        
+        OVERLAPPED overlapped = {0};
+        overlapped.Offset = index;
+        overlapped.OffsetHigh = 0;
+        
+        BOOL success = ReadFile(handle, bytes_dst, read_size, &bytes_read, &overlapped);
+        if (!success || bytes_read == 0) {
+            break;
+        }
+        
+        dst_off += bytes_read;
+        src_off += bytes_read;
+        
+        if (dst_off >= data_size) {
+            break;
+        }
+    }
+    
+    return dst_off;
+}
 
+function u32
+os_file_write(os_handle_t file, u32 index, void* data, u32 data_size) {
+    
+    if(os_handle_equals(file, { 0 })) { 
+        return 0;
+    }
+    
+    HANDLE handle = (HANDLE)file.data[0];
+    
+    u32 src_off = 0;
+    u32 dst_off = index;
+    
+    for(;;) {
+        void *bytes_src = (u8*)data + src_off;
+        u32 bytes_left = data_size - src_off;
+        DWORD write_size = min(megabytes(1), bytes_left);
+        DWORD bytes_written = 0;
+        OVERLAPPED overlapped = {0};
+        overlapped.Offset = (dst_off & 0x00000000ffffffffull);
+        overlapped.OffsetHigh = (dst_off & 0xffffffff00000000ull) >> 32;
+        BOOL success = WriteFile(handle, bytes_src, write_size, &bytes_written, &overlapped);
+        if(success == false) {
+            break;
+        }
+        src_off += bytes_written;
+        dst_off += bytes_written;
+        
+        if(bytes_left == 0) {
+            break;
+        }
+    }
+    
+    return src_off;
+}
 
 //- file info functions
 
 function os_file_info_t
 os_file_get_info(os_handle_t file) {
     
-    HANDLE handle = (HANDLE)file.data[0];
-    
     os_file_info_t result = { 0 };
-    BY_HANDLE_FILE_INFORMATION file_info;
-    GetFileInformationByHandle(handle, &file_info);
     
-    result.flags = os_w32_file_flags_from_attributes(file_info.dwFileAttributes);
-    result.size = ((u64)file_info.nFileSizeLow) | (((u64)file_info.nFileSizeHigh) << 32);
-    result.creation_time = ((u64)file_info.ftCreationTime.dwLowDateTime) | (((u64)file_info.ftCreationTime.dwHighDateTime) << 32);
-    result.last_access_time = ((u64)file_info.ftLastAccessTime.dwLowDateTime) | (((u64)file_info.ftLastAccessTime.dwHighDateTime) << 32);
-    result.last_write_time = ((u64)file_info.ftLastWriteTime.dwLowDateTime) | (((u64)file_info.ftLastWriteTime.dwHighDateTime) << 32);
+    if (!os_handle_equals(file, { 0 })) {
+        HANDLE handle = (HANDLE)file.data[0];
+        
+        BY_HANDLE_FILE_INFORMATION file_info;
+        GetFileInformationByHandle(handle, &file_info);
+        
+        result.flags = os_w32_file_flags_from_attributes(file_info.dwFileAttributes);
+        result.size = ((u64)file_info.nFileSizeLow) | (((u64)file_info.nFileSizeHigh) << 32);
+        result.creation_time = ((u64)file_info.ftCreationTime.dwLowDateTime) | (((u64)file_info.ftCreationTime.dwHighDateTime) << 32);
+        result.last_access_time = ((u64)file_info.ftLastAccessTime.dwLowDateTime) | (((u64)file_info.ftLastAccessTime.dwHighDateTime) << 32);
+        result.last_write_time = ((u64)file_info.ftLastWriteTime.dwLowDateTime) | (((u64)file_info.ftLastWriteTime.dwHighDateTime) << 32);
+    }
     
     return result;
 }
@@ -1137,10 +1222,17 @@ os_w32_window_procedure(HWND handle, UINT msg, WPARAM wparam, LPARAM lparam) {
                 UINT height = HIWORD(lparam);
                 window->resolution = uvec2(width, height);
                 PAINTSTRUCT ps = { 0 };
-                BeginPaint(handle, &ps);
+                HDC hdc = BeginPaint(handle, &ps);
                 if (window->frame_func != nullptr) {
                     window->frame_func();
                 }
+                
+                
+                //RECT clientRect;
+                //GetClientRect(handle, &clientRect);
+                //RECT titlebarRect = { 0, 0, clientRect.right, 30 };
+                //FillRect(hdc, &clientRect, (HBRUSH)(COLOR_WINDOW + 1));
+                //FillRect(hdc, &titlebarRect, (HBRUSH)(COLOR_MENU + 1));
                 EndPaint(handle, &ps);
             }
             break;

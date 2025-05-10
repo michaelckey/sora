@@ -11,6 +11,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "vendor/stb_image_write.h"
 
+#define sora_gfx_mesh_magic_number 0x48534D52
+#define sora_gfx_mesh_file_version 1
+
 //- enums
 
 enum gfx_resource_type {
@@ -18,9 +21,7 @@ enum gfx_resource_type {
 	gfx_resource_type_buffer,
 	gfx_resource_type_texture,
 	gfx_resource_type_shader,
-	gfx_resource_type_compute_shader,
 	gfx_resource_type_render_target,
-	gfx_resource_type_count,
 };
 
 enum gfx_usage {
@@ -30,6 +31,8 @@ enum gfx_usage {
 	gfx_usage_stream,
 };
 
+// buffer
+
 enum gfx_buffer_type {
 	gfx_buffer_type_null,
 	gfx_buffer_type_vertex,
@@ -37,10 +40,14 @@ enum gfx_buffer_type {
 	gfx_buffer_type_constant,
 };
 
-enum gfx_texture_usage {
-	gfx_texture_usage_null,
-	gfx_texture_usage_ps,
-	gfx_texture_usage_cs,
+// texture
+
+enum gfx_texture_type {
+	gfx_texture_type_null,
+	gfx_texture_type_1d,
+	gfx_texture_type_2d,
+	gfx_texture_type_3d,
+	gfx_texture_type_cube,
 };
 
 enum gfx_texture_format {
@@ -58,10 +65,60 @@ enum gfx_texture_format {
 	gfx_texture_format_d32,
 };
 
-enum gfx_texture_type {
-	gfx_texture_type_null,
-	gfx_texture_type_2d,
-	gfx_texture_type_3d,
+typedef u32 gfx_texture_flags;
+enum {
+    gfx_texture_flag_none = 0,
+    gfx_texture_flag_render_target = (1 << 0),
+    gfx_texture_flag_mipmap = (1 << 1),
+};
+
+// shader
+
+typedef u32 gfx_shader_flags;
+enum {
+    
+    // shader type
+    gfx_shader_flag_vertex = (1 << 0),
+    gfx_shader_flag_pixel = (1 << 1),
+    gfx_shader_flag_geometry = (1 << 2),
+    gfx_shader_flag_hull = (1 << 3),
+    gfx_shader_flag_domain = (1 << 4),
+    gfx_shader_flag_compute = (1 << 5),
+    
+    // vertex classification
+    gfx_shader_flag_per_vertex = (1 << 10),
+    gfx_shader_flag_per_instance = (1 << 11),
+};
+
+enum gfx_vertex_format {
+	gfx_vertex_format_null,
+	gfx_vertex_format_float,
+	gfx_vertex_format_float2,
+	gfx_vertex_format_float3,
+	gfx_vertex_format_float4,
+	gfx_vertex_format_uint,
+	gfx_vertex_format_uint2,
+	gfx_vertex_format_uint3,
+	gfx_vertex_format_uint4,
+	gfx_vertex_format_int,
+	gfx_vertex_format_int2,
+	gfx_vertex_format_int3,
+	gfx_vertex_format_int4,
+};
+
+// pipeline
+
+enum gfx_cull_mode {
+	gfx_cull_null,
+	gfx_cull_none,
+	gfx_cull_front,
+	gfx_cull_back,
+};
+
+enum gfx_depth_mode {
+	gfx_depth_null,
+	gfx_depth,
+	gfx_depth_none,
 };
 
 enum gfx_filter_mode {
@@ -82,12 +139,6 @@ enum gfx_fill_mode {
 	gfx_fill_wireframe,
 };
 
-enum gfx_depth_mode {
-	gfx_depth_null,
-	gfx_depth,
-	gfx_depth_none,
-};
-
 enum gfx_topology_type {
 	gfx_topology_null,
 	gfx_topology_points,
@@ -97,120 +148,69 @@ enum gfx_topology_type {
 	gfx_topology_tri_strip,
 };
 
-enum gfx_vertex_format {
-	gfx_vertex_format_null,
-	gfx_vertex_format_float,
-	gfx_vertex_format_float2,
-	gfx_vertex_format_float3,
-	gfx_vertex_format_float4,
-	gfx_vertex_format_uint,
-	gfx_vertex_format_uint2,
-	gfx_vertex_format_uint3,
-	gfx_vertex_format_uint4,
-	gfx_vertex_format_int,
-	gfx_vertex_format_int2,
-	gfx_vertex_format_int3,
-	gfx_vertex_format_int4,
-};
 
-enum gfx_vertex_class {
-	gfx_vertex_class_null,
-	gfx_vertex_class_per_vertex,
-	gfx_vertex_class_per_instance,
-};
-
-enum gfx_uniform_type {
-	gfx_uniform_type_null,
-	gfx_uniform_type_float,
-	gfx_uniform_type_float2,
-	gfx_uniform_type_float3,
-	gfx_uniform_type_float4,
-	gfx_uniform_type_uint,
-	gfx_uniform_type_uint2,
-	gfx_uniform_type_uint3,
-	gfx_uniform_type_uint4,
-	gfx_uniform_type_int,
-	gfx_uniform_type_int2,
-	gfx_uniform_type_int3,
-	gfx_uniform_type_int4,
-	gfx_uniform_type_mat4,
-};
-
-enum gfx_cull_mode {
-	gfx_cull_mode_null,
-	gfx_cull_mode_none,
-	gfx_cull_mode_front,
-	gfx_cull_mode_back,
-};
-
-// NOTE: not sure if this will be used.
-enum gfx_face_winding {
-	gfx_face_winding_null,
-	gfx_face_winding_ccw,
-	gfx_face_winding_cw,
-};
-
-typedef u32 gfx_render_target_flags;
+typedef u32 gfx_camera_mode;
 enum {
-	gfx_render_target_flag_null = 0,
-	gfx_render_target_flag_depth = (1 << 0),
+	gfx_camera_mode_disable_roll = (1 << 0),
+	gfx_camera_mode_disable_move_in_world_plane = (1 << 1),
+	gfx_camera_mode_clamp_pitch = (1 << 2),
+	gfx_camera_mode_clamp_yaw = (1 << 3),
+	gfx_camera_mode_clamp_roll = (1 << 4),
+    
+	gfx_camera_mode_free = 0,
+	gfx_camera_mode_first_person = gfx_camera_mode_disable_roll | gfx_camera_mode_disable_move_in_world_plane | gfx_camera_mode_clamp_pitch,
+	gfx_camera_mode_orbit = gfx_camera_mode_disable_roll | gfx_camera_mode_clamp_pitch
 };
+
+
+//- typedefs 
+
+struct gfx_handle_t;
+typedef void gfx_render_pass_init_func(gfx_handle_t);
+typedef void gfx_render_pass_execute_func(gfx_handle_t);
 
 //- structs
 
+// handle
 struct gfx_handle_t {
 	u64 data[1];
 };
 
+// buffers
 struct gfx_buffer_desc_t {
 	gfx_buffer_type type;
 	u32 size;
 	gfx_usage usage;
 };
 
+// textures
 struct gfx_texture_desc_t {
 	str_t name;
 	uvec2_t size;
 	gfx_texture_format format;
 	gfx_texture_type type;
+	gfx_texture_flags flags;
+	gfx_usage usage;
 	u32 sample_count;
-	gfx_usage usage;
-	b8 render_target;
 };
 
-struct gfx_texture_3d_desc_t {
-	str_t name;
-	uvec3_t size;
-	gfx_texture_format format;
-	gfx_usage usage;
-};
-
-struct gfx_shader_attribute_t {
-	char* name;
-	u32 slot;
-	gfx_vertex_format format;
-	gfx_vertex_class classification;
-};
-
+// shaders
 struct gfx_shader_desc_t {
 	str_t name;
 	str_t filepath;
-	gfx_shader_attribute_t* attributes;
-	u32 attribute_count;
+	gfx_shader_flags flags;
+    u64 last_write_time;
 };
 
-struct gfx_compute_shader_desc_t {
-	str_t name;
-	str_t filepath;
-};
-
+// render target
 struct gfx_render_target_desc_t {
 	uvec2_t size;
 	u32 sample_count;
-	gfx_render_target_flags flags;
-	gfx_texture_format format;
+	gfx_texture_format colorbuffer_format;
+	gfx_texture_format depthbuffer_format;
 };
 
+// pipeline
 struct gfx_pipeline_t {
 	gfx_fill_mode fill_mode;
 	gfx_cull_mode cull_mode;
@@ -222,20 +222,274 @@ struct gfx_pipeline_t {
 	rect_t scissor;
 };
 
+// forward declare
+struct gfx_render_port_t;
+struct gfx_render_connection_t;
+struct gfx_render_pass_t;
+struct gfx_render_graph_t;
 
-//- functions
+// ports
+struct gfx_render_port_t {
+    gfx_render_port_t* next;
+    gfx_render_port_t* prev;
+    
+    str_t label;
+    gfx_render_pass_t* pass;
+    gfx_render_port_t* connected_port;
+    gfx_handle_t resource;
+};
+
+struct gfx_render_port_list_t {
+    gfx_render_port_t* first;
+    gfx_render_port_t* last;
+};
+
+// connections
+struct gfx_render_connection_t {
+    
+    // global list
+    gfx_render_connection_t* next;
+    gfx_render_connection_t* prev;
+    
+    // ports
+    gfx_render_port_t* from;
+    gfx_render_port_t* to;
+    
+};
+
+// render pass
+struct gfx_render_pass_t {
+    gfx_render_graph_t* graph;
+    
+    // global list
+    gfx_render_pass_t* next;
+    gfx_render_pass_t* prev;
+    
+    // execute list
+    gfx_render_pass_t* execute_next;
+    gfx_render_pass_t* execute_prev;
+    
+    // funcs
+    gfx_render_pass_init_func* init_func;
+    gfx_render_pass_execute_func* execute_func;
+    
+    // ports
+    gfx_render_port_list_t inputs;
+    gfx_render_port_list_t outputs;
+    
+    // topological sort
+    u32 in_degree;
+};
+
+struct gfx_render_pass_ts_queue_t {
+    gfx_render_pass_ts_queue_t* next;
+    gfx_render_pass_ts_queue_t* prev;
+    gfx_render_pass_t* pass;
+};
+
+// render graph
+struct gfx_render_graph_t {
+    
+    // arenas
+    arena_t* arena;
+    
+    // handles
+    gfx_handle_t renderer;
+    
+    // passes
+    gfx_render_pass_t* pass_first;
+    gfx_render_pass_t* pass_last;
+    gfx_render_pass_t* pass_free;
+    
+    // execute list
+    gfx_render_pass_t* execute_first;
+    gfx_render_pass_t* execute_last;
+    
+    // ports
+    gfx_render_port_t* port_free;
+    
+    // connections
+    gfx_render_connection_t* connection_first;
+    gfx_render_connection_t* connection_last;
+    gfx_render_connection_t* connection_free;
+    
+};
+
+// mesh
+
+struct gfx_face_index_t {
+    i32 position_index;
+    i32 texcoord_index;
+    i32 normal_index;
+};
+
+struct gfx_face_t {
+    gfx_face_index_t indices[4];
+    u32 index_count;
+};
+
+struct gfx_vertex_lookup_t {
+    i32 position_index;
+    i32 texcoord_index;
+    i32 normal_index;
+    i32 new_index;
+};
+
+struct gfx_vertex_t {
+    vec3_t position;
+    vec3_t normal;
+    vec3_t tangent;
+    vec2_t texcoord;
+    vec4_t color;
+};
+
+struct gfx_mesh_t {
+    gfx_vertex_t* vertices;
+    u32 vertex_count;
+    
+    i32* indices;
+    u32 index_count;
+};
+
+struct gfx_mesh_file_header_t {
+    u32 magic;
+    u32 version;
+    u32 vertex_count;
+    u32 index_count;
+    u32 flags;
+};
+
+// camera
+
+struct gfx_camera_constants_t {
+    mat4_t view_projection;
+    mat4_t view;
+    mat4_t projection;
+    mat4_t inv_view;
+    mat4_t inv_projection;
+    vec3_t camera_position;
+};
+
+struct gfx_camera_t {
+    
+    gfx_camera_mode mode;
+    gfx_camera_constants_t constants;
+    
+    vec3_t target_position;
+    vec3_t position;
+    
+    f32 target_distance;
+    f32 distance;
+    
+    quat_t target_orientation;
+    quat_t orientation;
+    
+    vec3_t translational_input;
+    vec3_t rotational_input;
+    
+    f32 speed;
+    f32 target_speed;
+    f32 target_fov;
+    f32 fov;
+    f32 z_near;
+    f32 z_far;
+    f32 min_pitch;
+    f32 max_pitch;
+    f32 min_yaw;
+    f32 max_yaw;
+    f32 min_roll;
+    f32 max_roll;
+};
+
+//~ functions 
+
+// handle (implemented once)
+function b8 gfx_handle_equals(gfx_handle_t a, gfx_handle_t b);
+
+// pipeline (implemented once)
+function gfx_pipeline_t gfx_pipeline_create();
+
+// helper functions (implemented once)
+function b8 gfx_texture_format_is_depth(gfx_texture_format format);
+
+//~ high level functions
 
 // state (implemented per backend)
 function void gfx_init();
 function void gfx_release();
-function void gfx_update();
 
+// renderer (implemented per backend)
+function gfx_handle_t gfx_renderer_create(os_handle_t window);
+function void gfx_renderer_release(gfx_handle_t renderer);
+function void gfx_renderer_set_size(gfx_handle_t renderer, uvec2_t size);
+function uvec2_t gfx_renderer_get_size(gfx_handle_t renderer);
+function void gfx_renderer_update(gfx_handle_t renderer);
+function void gfx_renderer_resize(gfx_handle_t renderer, uvec2_t size);
+function void gfx_renderer_clear(gfx_handle_t renderer, color_t clear_color);
+function void gfx_renderer_present(gfx_handle_t renderer);
+
+// resources (implemented once)
+
+// textures
+function gfx_handle_t gfx_texture_load(str_t filepath, gfx_texture_flags flags = 0);
+
+// shaders
+function gfx_handle_t gfx_shader_load(str_t filepath, gfx_shader_flags flags = 0);
+
+// mesh
+function gfx_handle_t gfx_mesh_load(arena_t* arena, str_t filepath);
+function u32 gfx_mesh_get_vertex_count(gfx_handle_t mesh);
+function u32 gfx_mesh_get_index_count(gfx_handle_t mesh);
+function gfx_vertex_t* gfx_mesh_get_vertices(gfx_handle_t mesh);
+function i32* gfx_mesh_get_indices(gfx_handle_t mesh);
+
+// camera
+function gfx_handle_t gfx_camera_create(arena_t* arena, gfx_camera_mode mode, f32 fov, f32 z_near, f32 z_far);
+function void gfx_camera_free_mode_input(gfx_handle_t camera, os_handle_t window);
+function void gfx_camera_update(gfx_handle_t camera, rect_t viewport, f32 dt);
+function gfx_camera_constants_t* gfx_camera_get_constants(gfx_handle_t camera);
+function mat4_t gfx_camera_get_view(gfx_handle_t camera);
+function mat4_t gfx_camera_get_projection(gfx_handle_t camera);
+
+// render graphs (implemented once)
+function gfx_handle_t gfx_render_graph_create(gfx_handle_t renderer);
+function void gfx_render_graph_release(gfx_handle_t render_graph);
+function void gfx_render_graph_compile(gfx_handle_t render_graph);
+function void gfx_render_graph_execute(gfx_handle_t render_graph);
+
+// render passes (implemented once)
+function gfx_handle_t gfx_render_pass_create(gfx_handle_t render_graph, gfx_render_pass_init_func init_func, gfx_render_pass_execute_func execute_func);
+function void gfx_render_pass_release(gfx_handle_t render_pass);
+function void gfx_render_pass_add_input(gfx_handle_t render_pass, str_t label);
+function void gfx_render_pass_add_output(gfx_handle_t render_pass, str_t label);
+function void gfx_render_pass_link(gfx_handle_t src, str_t output_label, gfx_handle_t dst, str_t input_label);
+function void gfx_render_pass_unlink(gfx_handle_t src, str_t output_label, gfx_handle_t dst, str_t input_label);
+function void gfx_render_pass_set_output(gfx_handle_t render_pass, str_t output_label, gfx_handle_t resource);
+function gfx_handle_t gfx_render_pass_get_input(gfx_handle_t render_pass, str_t input_label);
+function gfx_handle_t gfx_render_pass_get_output(gfx_handle_t render_pass, str_t output_label);
+
+// internal (implemented once)
+
+// render graph internal
+function gfx_render_port_t* _gfx_render_port_alloc(gfx_render_graph_t* render_graph);
+function gfx_render_port_t* _gfx_render_port_find(gfx_render_port_list_t list, str_t label);
+function gfx_render_connection_t* _gfx_render_connection_alloc(gfx_render_graph_t* render_graph);
+function gfx_render_connection_t* _gfx_render_connection_find(gfx_render_graph_t* render_graph, gfx_render_port_t* from, gfx_render_port_t* to);
+
+// mesh internal
+function void _gfx_mesh_load_from_obj(arena_t* arena, gfx_mesh_t* mesh, str_t filepath);
+function void _gfx_mesh_load_from_binary(arena_t* arena, gfx_mesh_t* mesh, str_t filepath);
+function void _gfx_mesh_write_to_obj(gfx_mesh_t* mesh, str_t filepath);
+function void _gfx_mesh_write_to_binary(gfx_mesh_t* mesh, str_t filepath);
+
+//~ low level functions
+
+// render state (implemented per backend)
 function void gfx_draw(u32 vertex_count, u32 start_index = 0);
 function void gfx_draw_indexed(u32 index_count, u32 start_index = 0, u32 offset = 0);
-function void gfx_draw_instanced(u32 vertex_count, u32 instance_count, u32 start_vertex_index = 0, u32 start_instnace_index = 0);
-
+function void gfx_draw_instanced(u32 vertex_count, u32 instance_count, u32 start_vertex_index = 0, u32 start_instance_index = 0);
 function void gfx_dispatch(u32 thread_group_x, u32 thread_group_y, u32 thread_group_z);
-
+function void gfx_set_context(gfx_handle_t context);
 function void gfx_set_sampler(gfx_filter_mode filter, gfx_wrap_mode wrap, u32 slot);
 function void gfx_set_topology(gfx_topology_type topology);
 function void gfx_set_rasterizer(gfx_fill_mode fill, gfx_cull_mode cull);
@@ -244,74 +498,43 @@ function void gfx_set_scissor(rect_t scissor);
 function void gfx_set_depth_mode(gfx_depth_mode depth);
 function void gfx_set_pipeline(gfx_pipeline_t pipeline);
 function void gfx_set_buffer(gfx_handle_t buffer, u32 slot = 0, u32 stride = 0);
-function void gfx_set_texture(gfx_handle_t texture, u32 slot = 0, gfx_texture_usage usage = gfx_texture_usage_ps);
-function void gfx_set_texture_array(gfx_handle_t* textures, u32 texture_count, u32 slot, gfx_texture_usage usage);
-function void gfx_set_texture_3d(gfx_handle_t texture, u32 slot = 0, gfx_texture_usage usage = gfx_texture_usage_ps);
+function void gfx_set_texture(gfx_handle_t texture, u32 slot = 0);
+function void gfx_set_texture_array(gfx_handle_t* textures, u32 texture_count, u32 slot);
 function void gfx_set_shader(gfx_handle_t shader = {0});
-function void gfx_set_compute_shader(gfx_handle_t compute_shader = { 0 });
 function void gfx_set_render_target(gfx_handle_t render_target = { 0 });
 
-// handle
-function b8 gfx_handle_equals(gfx_handle_t a, gfx_handle_t b);
-
-// pipeline
-function gfx_pipeline_t gfx_pipeline_create();
-
-// renderer (implemented per backend)
-function gfx_handle_t gfx_renderer_create(os_handle_t window, color_t clear_color);
-function void gfx_renderer_release(gfx_handle_t renderer);
-function void gfx_renderer_resize(gfx_handle_t renderer, uvec2_t size);
-function void gfx_renderer_begin(gfx_handle_t renderer);
-function void gfx_renderer_end(gfx_handle_t renderer);
-function uvec2_t gfx_renderer_get_size(gfx_handle_t renderer);
-
 // buffer (implemented per backend)
-function gfx_handle_t gfx_buffer_create_ex(gfx_buffer_desc_t desc, void* data);
-function gfx_handle_t gfx_buffer_create(gfx_buffer_type type, u32 size, void* data = nullptr);
+function gfx_handle_t gfx_buffer_create_ex(gfx_buffer_desc_t desc, void* initial_data = nullptr);
+function gfx_handle_t gfx_buffer_create(gfx_buffer_type type, u32 size, void* initial_data = nullptr);
 function void         gfx_buffer_release(gfx_handle_t buffer);
 function void         gfx_buffer_fill(gfx_handle_t buffer, void* data, u32 size);
 
 // texture (implemented per backend)
 function gfx_handle_t gfx_texture_create_ex(gfx_texture_desc_t texture_desc, void* data = nullptr);
 function gfx_handle_t gfx_texture_create(uvec2_t size, gfx_texture_format format = gfx_texture_format_rgba8, void* data = nullptr);
-function gfx_handle_t gfx_texture_load(str_t filepath);
 function void gfx_texture_release(gfx_handle_t texture);
 function uvec2_t gfx_texture_get_size(gfx_handle_t texture);
 function void gfx_texture_resize(gfx_handle_t texture, uvec2_t size);
 function void gfx_texture_fill(gfx_handle_t texture, void* data);
 function void gfx_texture_fill_region(gfx_handle_t texture, rect_t region, void* data);
 function void gfx_texture_blit(gfx_handle_t texture_dst, gfx_handle_t texture_src);
-function void gfx_texture_write(gfx_handle_t texture, str_t filepath);
-
-function gfx_handle_t gfx_texture_3d_create_ex(gfx_texture_3d_desc_t desc, void* data = nullptr);
-function gfx_handle_t gfx_texture_3d_create(str_t name, uvec3_t size, gfx_texture_format format = gfx_texture_format_rgba8, void* data = nullptr);
-function void gfx_texture_3d_release(gfx_handle_t texture);
 
 // shaders (implemented per backend)
-function gfx_handle_t gfx_shader_create_ex(str_t, gfx_shader_desc_t);
-function gfx_handle_t gfx_shader_create(str_t, str_t, gfx_shader_attribute_t*, u32);
-function gfx_handle_t gfx_shader_load(str_t, gfx_shader_attribute_t*, u32);
-function void gfx_shader_release(gfx_handle_t);
-function void gfx_shader_compile(gfx_handle_t, str_t);
-
-// compute shaders (implemented per backend)
-function gfx_handle_t gfx_compute_shader_create_ex(str_t src, gfx_compute_shader_desc_t desc);
-function gfx_handle_t gfx_compute_shader_create(str_t src, str_t name);
-function gfx_handle_t gfx_compute_shader_load(str_t filepath);
-function void gfx_compute_shader_release(gfx_handle_t shader);
-function void gfx_compute_shader_compile(gfx_handle_t shader, str_t src);
+function gfx_handle_t gfx_shader_create_ex(gfx_shader_desc_t shader_desc);
+function gfx_handle_t gfx_shader_create(str_t name, gfx_shader_flags flags);
+function void gfx_shader_release(gfx_handle_t shader);
+function void gfx_shader_compile(gfx_handle_t shader, str_t src);
+function void gfx_shader_set_binary(gfx_handle_t shader, void* binary, u32 binary_size);
+function void gfx_shader_get_binary(gfx_handle_t handle, void** out_binary, u32* out_binary_size);
 
 // render target (implemented per backend)
 function gfx_handle_t gfx_render_target_create_ex(gfx_render_target_desc_t desc);
-function gfx_handle_t gfx_render_target_create(gfx_texture_format format, uvec2_t size, gfx_render_target_flags flags = 0);
+function gfx_handle_t gfx_render_target_create(uvec2_t size, gfx_texture_format colorbuffer_format, gfx_texture_format depthbuffer_format = gfx_texture_format_null);
 function void gfx_render_target_release(gfx_handle_t render_target);
 function void gfx_render_target_resize(gfx_handle_t render_target, uvec2_t size);
 function void gfx_render_target_clear(gfx_handle_t render_target, color_t clear_color = color(0x000000ff), f32 clear_depth = 1.0f);
 function void gfx_render_target_create_resources(gfx_handle_t render_target);
 function uvec2_t gfx_render_target_get_size(gfx_handle_t render_target);
-
-// helper functions
-function b8 gfx_texture_format_is_depth(gfx_texture_format format);
 
 //- per backend includes
 

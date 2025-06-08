@@ -142,6 +142,18 @@ os_get_thread_id() {
     return GetCurrentThreadId();
 }
 
+function u64 
+os_get_cpu_freq() {
+    return os_state.time_frequency.QuadPart;
+}
+
+function u64 
+os_get_cpu_time() {
+    LARGE_INTEGER current_time;
+	QueryPerformanceCounter(&current_time);
+    return current_time.QuadPart;
+}
+
 
 function color_t
 os_get_sys_color(os_sys_color id) {
@@ -547,7 +559,7 @@ os_file_read_range(arena_t* arena, os_handle_t file, u32 start, u32 length) {
     if (SetFilePointerEx(handle, off_li, 0, FILE_BEGIN)) {
         u32 bytes_to_read = length;
         u32 bytes_actually_read = 0;
-        result.data = (u8*)arena_alloc(arena, sizeof(u8) * bytes_to_read);
+        result.data = (u8*)arena_alloc(arena, sizeof(u8) * bytes_to_read + 1);
         result.size = 0;
         
         u8* ptr = (u8*)result.data;

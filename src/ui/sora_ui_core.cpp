@@ -12,7 +12,18 @@ ui_init() {
     
     // load icon font
     ui_font_icon = font_open(str("res/fonts/icons.ttf"));
-    ui_font_default = font_open(str("res/fonts/consola.ttf"));
+    ui_font_default = font_open(str("res/fonts/segoe_ui.ttf"));
+    
+    ui_vertex_shader = gfx_shader_load(str("res/shaders/shader_ui.hlsl"), gfx_shader_flag_vertex | gfx_shader_flag_per_instance);
+    ui_pixel_shader = gfx_shader_load(str("res/shaders/shader_ui.hlsl"), gfx_shader_flag_pixel);
+    
+    u32 texture_data[] = {
+        0xffffffff,
+        0xff909090,
+        0xff909090,
+        0xffffffff,
+    };
+    ui_transparent_texture = gfx_texture_create(uvec2(2, 2), gfx_texture_format_rgba8, texture_data);
     
 }
 
@@ -20,6 +31,9 @@ function void
 ui_release() {
     font_close(ui_font_icon);
     font_close(ui_font_default);
+    
+    gfx_shader_release(ui_vertex_shader);
+    gfx_shader_release(ui_pixel_shader);
 }
 
 function void 
@@ -43,16 +57,19 @@ context->name##_r_stack.auto_pop = false;
     ui_r_stack_list
 #undef ui_r_stack
     
-    // reset texture list
-    memset(context->texture_list, 0, sizeof(gfx_handle_t) * ui_r_max_textures);
-    context->texture_count = 0;
-    
-    memset(context->constants.clip_masks, 0, sizeof(rect_t) * 128);
-    context->clip_mask_count = 0;
-    
-    // reset build state
+    // reset tags
+    context->tags_stack_top = nullptr;
+    context->tags_stack_free = nullptr;
     context->tags_hash_list_count = 512;
-    context->tags_hash_list = (ui_tags_hash_list_t*)arena_calloc(ui_build_arena(), sizeof(ui_tags_hash_list_t) * context->tags_hash_list_count);
+    context->tags_hash_list = (ui_tags_cache_hash_list_t*)arena_calloc(ui_build_arena(), sizeof(ui_tags_cache_hash_list_t) * context->tags_hash_list_count);
+    
+    // reset texture, clips, and colors
+    memset(context->texture_list, 0, sizeof(gfx_handle_t) * ui_r_max_texture_count);
+    memset(&context->clip_mask_constants, 0, sizeof(ui_r_clip_mask_constants_t));
+    memset(&context->color_constants, 0, sizeof(ui_r_color_constants_t));
+    context->texture_count = 0;
+    context->clip_mask_count = 0;
+    context->color_count = 0;
     
     // copy to prev key state
     context->key_hovered_prev = context->key_hovered;
@@ -70,7 +87,6 @@ context->name##_r_stack.auto_pop = false;
     }
     
     // gather events
-    
     vec2_t last_mouse_pos = context->mouse_pos;
     context->mouse_pos = os_window_get_cursor_pos(context->window);
     context->mouse_delta = vec2_sub(context->mouse_pos, last_mouse_pos);
@@ -99,10 +115,7 @@ context->name##_r_stack.auto_pop = false;
                     break;
                 }
                 
-                case os_event_type_key_release: {
-                    ui_event->type = ui_event_type_key_release;
-                    break;
-                }
+                case os_event_type_key_release: { ui_event->type = ui_event_type_key_release; break; }
                 
                 case os_event_type_mouse_press: {
                     ui_event->type = ui_event_type_mouse_press;
@@ -111,25 +124,10 @@ context->name##_r_stack.auto_pop = false;
                     break;
                 }
                 
-                case os_event_type_mouse_release: {
-                    ui_event->type = ui_event_type_mouse_release;
-                    break;
-                }
-                
-                case os_event_type_mouse_move: {
-                    ui_event->type = ui_event_type_mouse_move;
-                    break;
-                }
-                
-                case os_event_type_mouse_scroll: {
-                    ui_event->type = ui_event_type_mouse_scroll;
-                    break;
-                }
-                
-                case os_event_type_text: {
-                    ui_event->type = ui_event_type_text;
-                    break;
-                }
+                case os_event_type_mouse_release: { ui_event->type = ui_event_type_mouse_release; break; }
+                case os_event_type_mouse_move: { ui_event->type = ui_event_type_mouse_move; break; }
+                case os_event_type_mouse_scroll: { ui_event->type = ui_event_type_mouse_scroll; break; }
+                case os_event_type_text: { ui_event->type = ui_event_type_text; break; }
             }
             
             // push to event list
@@ -151,21 +149,68 @@ context->name##_r_stack.auto_pop = false;
         
         if (node->last_build_index + 2 < context->build_index) {
             u32 index = node->key.data[0] % context->anim_hash_list_count;
-            dll_remove_np(context->anim_hash_list[index].first, context->anim_hash_list[index].last, node, list_next, list_prev);
+            ui_anim_hash_list_t* hash_list = &context->anim_hash_list[index];
+            dll_remove_np(hash_list->first, hash_list->last, node, list_next, list_prev);
             dll_remove_np(context->anim_node_lru, context->anim_node_mru, node, lru_next, lru_prev);
             stack_push_n(context->anim_node_free, node, list_next);
+        } else {
+            break;
         }
     }
     
+    // prune unused data node
+    for (ui_data_node_t* node = context->data_node_lru, *next = nullptr; node != nullptr; node = next) {
+        next = node->lru_next;
+        
+        if (node->last_build_index + 2 < context->build_index) {
+            u32 index = node->key.data[0] % context->data_hash_list_count;
+            ui_data_hash_list_t* hash_list = &context->data_hash_list[index];
+            dll_remove_np(hash_list->first, hash_list->last, node, list_next, list_prev);
+            dll_remove_np(context->data_node_lru, context->data_node_mru, node, lru_next, lru_prev);
+            stack_push_n(context->data_node_free, node, list_next);
+        } else {
+            break;
+        }
+    }
+    
+    // prune unused color nodes
+    for (ui_color_cache_node_t* node = context->color_node_lru, *next = nullptr; node != nullptr; node = next) {
+        next = node->lru_next;
+        
+        if (node->last_build_index + 2 < context->build_index) {
+            u32 index = node->key.data[0] % context->color_hash_list_count;
+            ui_color_cache_hash_list_t* hash_list = &context->color_hash_list[index];
+            dll_remove_np(hash_list->first, hash_list->last, node, list_next, list_prev);
+            dll_remove_np(context->color_node_lru, context->color_node_mru, node, lru_next, lru_prev);
+            stack_push_n(context->color_node_free, node, list_next);
+        } else {
+            break;
+        }
+        
+    }
+    
     // build root nodes
-    uvec2_t renderer_size = gfx_renderer_get_size(context->renderer);
-    ui_set_next_fixed_size((f32)renderer_size.x, (f32)renderer_size.y);
+    uvec2_t context_size = gfx_context_get_size(context->gfx_context);
+    ui_set_next_fixed_size((f32)context_size.x, (f32)context_size.y);
     context->node_root = ui_node_from_stringf(0, "root_%u", context->window.data[0]);
     ui_push_parent(context->node_root);
     
+    // build tooltip root
+    ui_set_next_tagf("tooltip");
+    ui_set_next_fixed_pos(context->mouse_pos.x + 15.0f, context->mouse_pos.y + 15.0f);
+    ui_set_next_size(ui_size_by_children(1.0f), ui_size_by_children(1.0f));
+    ui_set_next_padding(2.0f);
+    context->node_tooltip_root = ui_node_from_stringf(ui_flag_fixed_pos, "tooltip_%u", context->window.data[0]);
+    
+    // build popup root
+    ui_set_next_tagf("popup");
+    ui_set_next_fixed_pos(context->popup_pos.x, context->popup_pos.y);
+    ui_set_next_size(ui_size_by_children(1.0f), ui_size_by_children(1.0f));
+    ui_set_next_padding(2.0f);
+    context->node_popup_root = ui_node_from_stringf(ui_flag_mouse_interactable | ui_flag_fixed_pos, "popup_%u", context->window.data[0]);
+    
     // push rendering stacks
-    ui_r_push_clip_mask(rect(0.0f, 0.0f, (f32)renderer_size.x, (f32)renderer_size.y));
-    ui_r_push_texture(context->texture);
+    ui_r_push_clip_mask(rect(0.0f, 0.0f, (f32)context_size.x, (f32)context_size.y));
     
     prof_end();
 }
@@ -174,8 +219,16 @@ function void
 ui_end(ui_context_t* context) {
     prof_begin("ui_end");
     
-    // pop root parent
-    ui_pop_parent();
+    // popup interaction
+    
+    if (!context->popup_updated_this_frame) {
+        ui_popup_close();
+    }
+    
+    if(context->popup_is_open) {
+        ui_interaction_from_node(context->node_popup_root);
+    }
+    
     
     // drag state
     if (context->drag_state == ui_drag_state_dropping) {
@@ -190,6 +243,11 @@ ui_end(ui_context_t* context) {
         if (event->type == ui_event_type_mouse_release) {
             context->key_focused = { 0 };
         }
+        
+        if (event->type == ui_event_type_mouse_press) {
+            ui_popup_close();
+        }
+        
     }
     
     // prune unused and transient nodes
@@ -203,70 +261,74 @@ ui_end(ui_context_t* context) {
         }
     }
     
-    // layout
-    {
-        prof_begin("layout");
-        for (ui_axis axis = 0; axis < ui_axis_count; axis++) {
-            ui_layout_solve_independent(context->node_root, axis);
-            ui_layout_solve_upward_dependent(context->node_root, axis);
-            ui_layout_solve_downward_dependent(context->node_root, axis);
-            ui_layout_solve_violations(context->node_root, axis);
-            ui_layout_set_positions(context->node_root, axis);
-        }
-        prof_end();
+    // calculate layout
+    // TODO: investigate other layout options
+    prof_begin("ui_layout");
+    for (ui_axis axis = 0; axis < ui_axis_count; axis++) {
+        ui_layout_solve_independent(context->node_root, axis);
+        ui_layout_solve_upward_dependent(context->node_root, axis);
+        ui_layout_solve_downward_dependent(context->node_root, axis);
+        ui_layout_solve_violations(context->node_root, axis);
+        ui_layout_set_positions(context->node_root, axis);
     }
+    prof_end();
     
     // animate
-    {
-        prof_begin("animate");
-        
-        // animation rates
-        f32 dt = os_window_get_delta_time(context->window);
-        context->anim_rapid_rate = 1.0f - powf(2.0f, -75.0f * dt);
-        context->anim_fast_rate = 1.0f - powf(2.0f, -50.0f * dt);
-        context->anim_slow_rate = 1.0f - powf(2.0f, -25.0f * dt);
-        
-        // animate cache
-        for (u32 index =  0; index < context->anim_hash_list_count; index++) {
-            for (ui_anim_node_t* node = context->anim_hash_list[index].first; node != nullptr; node = node->list_next) {
-                node->current += (node->params.target - node->current) * node->params.rate;
-            }
+    prof_begin("ui_animate");
+    
+    // animation rates
+    f32 dt = os_window_get_delta_time(context->window);
+    context->anim_rapid_rate = 1.0f - powf(2.0f, -140.0f * dt);
+    context->anim_fast_rate = 1.0f - powf(2.0f, -50.0f * dt);
+    context->anim_slow_rate = 1.0f - powf(2.0f, -25.0f * dt);
+    
+    // animate cache
+    for (u32 index = 0; index < context->anim_hash_list_count; index++) {
+        for (ui_anim_node_t* node = context->anim_hash_list[index].first; node != nullptr; node = node->list_next) {
+            node->current += (node->params.target - node->current) * node->params.rate;
         }
-        
-        // animate nodes
-        for (u32 index = 0; index < context->node_hash_list_count; index++) {
-            for (ui_node_t* node = context->node_hash_list[index].first, *next = nullptr; node != nullptr; node = next) {
-                
-                b8 is_hovered = ui_key_equals(context->key_hovered, node->key);
-                b8 is_active = ui_key_equals(context->key_active[os_mouse_button_left], node->key);
-                
-                node->hover_t += context->anim_slow_rate * ((f32)is_hovered - node->hover_t);
-                node->active_t += context->anim_slow_rate * ((f32)is_active - node->active_t);
-                
-                // animate pos
-                if (node->flags & ui_flag_anim_pos_x) {
-                    node->pos.x += context->anim_fast_rate * (node->pos_target.x - node->pos.x);
-                    if (fabsf(node->pos_target.x - node->pos.x) < 1.0f) { node->pos.x = node->pos_target.x; }
-                }
-                if (node->flags & ui_flag_anim_pos_y) {
-                    node->pos.y += context->anim_fast_rate * (node->pos_target.y - node->pos.y);
-                    if (fabsf(node->pos_target.y - node->pos.y) < 1.0f) { node->pos.y = node->pos_target.y; }
-                }
-                
-                // animate view offset
-                node->view_offset_prev = node->view_offset;
-                node->view_offset.x += context->anim_fast_rate * (node->view_offset_target.x - node->view_offset.x);
-                if (fabsf(node->view_offset_target.x - node->view_offset.x) < 1.0f) { node->view_offset.x = node->view_offset_target.x; }
-                
-                node->view_offset.y += context->anim_fast_rate * (node->view_offset_target.y - node->view_offset.y);
-                if (fabsf(node->view_offset_target.y - node->view_offset.y) < 1.0f) { node->view_offset.y = node->view_offset_target.y; }
-                
-            }
-        }
-        
-        prof_end();
     }
     
+    // animate color cache
+    for (u32 index = 0; index < context->color_hash_list_count; index++) {
+        for (ui_color_cache_node_t* node = context->color_hash_list[index].first; node != nullptr; node = node->list_next) {
+            for (i32 i = 0; i < 4; i++) {
+                node->current_color[i] += (node->target_color[i] - node->current_color[i]) * context->anim_slow_rate;
+            }
+        }
+    }
+    
+    // animate nodes
+    for (u32 index = 0; index < context->node_hash_list_count; index++) {
+        for (ui_node_t* node = context->node_hash_list[index].first, *next = nullptr; node != nullptr; node = next) {
+            
+            b8 is_hovered = ui_key_equals(context->key_hovered, node->key);
+            b8 is_active = ui_key_equals(context->key_active[os_mouse_button_left], node->key);
+            
+            node->hover_t += context->anim_slow_rate * ((f32)is_hovered - node->hover_t);
+            node->active_t += context->anim_slow_rate * ((f32)is_active - node->active_t);
+            
+            // animate pos
+            if (node->flags & ui_flag_anim_pos_x) {
+                node->pos.x += context->anim_fast_rate * (node->pos_target.x - node->pos.x);
+                if (fabsf(node->pos_target.x - node->pos.x) < 1.0f) { node->pos.x = node->pos_target.x; }
+            }
+            if (node->flags & ui_flag_anim_pos_y) {
+                node->pos.y += context->anim_fast_rate * (node->pos_target.y - node->pos.y);
+                if (fabsf(node->pos_target.y - node->pos.y) < 1.0f) { node->pos.y = node->pos_target.y; }
+            }
+            
+            // animate view offset
+            node->view_offset_prev = node->view_offset;
+            node->view_offset.x += context->anim_fast_rate * (node->view_offset_target.x - node->view_offset.x);
+            if (fabsf(node->view_offset_target.x - node->view_offset.x) < 1.0f) { node->view_offset.x = node->view_offset_target.x; }
+            
+            node->view_offset.y += context->anim_fast_rate * (node->view_offset_target.y - node->view_offset.y);
+            if (fabsf(node->view_offset_target.y - node->view_offset.y) < 1.0f) { node->view_offset.y = node->view_offset_target.y; }
+            
+        }
+    }
+    prof_end();
     
     // hover cursor
     ui_node_t* hovered_node = ui_node_find(context->key_hovered);
@@ -278,19 +340,71 @@ ui_end(ui_context_t* context) {
         if (cursor != os_cursor_null) {
             os_set_cursor(cursor);
         }
-        
     }
     
-    
-    // draw ui 
+    // build draw command list
+    prof_begin("ui_draw");
     
     for (ui_node_t* node = context->node_root; node != nullptr;) {
         ui_node_rec_t rec = ui_node_rec_depth_first(node);
         
+        // shadow
+        if (node->flags & ui_flag_draw_shadow) {
+            color_t color_shadow = ui_color_from_key_name(node->tags_key, str("background shadow"));
+            ui_r_set_next_color(color_shadow);
+            ui_r_draw_rect(rect_translate(rect_grow(node->rect, 4.0f), 4.0f), 0.0f, 6.0f, node->rounding);
+        }
+        
+        // background
+        if (node->flags & ui_flag_draw_background) {
+            
+            // colors
+            color_t color_background = ui_color_from_key_name(node->tags_key, str("background"));
+            color_t color_overlay = color_background;
+            
+            if (node->flags & ui_flag_draw_hover_effects) {
+                color_t color_hover = color_blend(color_overlay, ui_color_from_key_name(node->tags_key, str("hover")));
+                color_overlay = color_lerp(color_overlay, color_hover, node->hover_t);
+            }
+            
+            if (node->flags & ui_flag_draw_active_effects) {
+                color_t color_active = color_blend(color_overlay, ui_color_from_key_name(node->tags_key, str("active")));
+                color_overlay = color_lerp(color_overlay, color_active, node->active_t);
+            }
+            
+            // draw main background
+            ui_r_set_next_color(color_background);
+            ui_r_draw_rect(node->rect, 0.0f, 0.33f, node->rounding);
+            
+            // draw effects
+            if (node->flags & ui_flag_draw_hover_effects | ui_flag_draw_active_effects) {
+                f32 height = rect_height(node->rect);
+                f32 weight = 0.35f;
+                
+                rect_t top_rect = rect_cut_top(node->rect, roundf(height * weight));
+                rect_t bottom_rect = rect_cut_bottom(node->rect, roundf(height * (1.0f - weight)));
+                color_t color_transparent = color_overlay;
+                color_transparent.a = min(color_overlay.a, 0.35f);
+                
+                ui_r_set_next_color0(color_transparent);
+                ui_r_set_next_color1(color_overlay);
+                ui_r_set_next_color2(color_transparent);
+                ui_r_set_next_color3(color_overlay);
+                ui_r_draw_rect(bottom_rect, 0.0f, 0.33f, vec4(node->rounding.x, 0.0f, node->rounding.z, 0.0f));
+                
+                ui_r_set_next_color0(color_overlay);
+                ui_r_set_next_color1(color_transparent);
+                ui_r_set_next_color2(color_overlay);
+                ui_r_set_next_color3(color_transparent);
+                ui_r_draw_rect(top_rect, 0.0f, 0.33f, vec4(0.0f, node->rounding.y, 0.0f, node->rounding.w));
+                
+            }
+        }
+        
         // clipping
+        rect_t top_clip = ui_r_top_clip_mask();
         if (node->flags & ui_flag_clip) {
-            rect_t top_clip = ui_r_top_clip_mask();
-            rect_t new_clip = node->rect;
+            rect_t new_clip = rect_shrink(node->rect, 1.0f);
             if (top_clip.x1 != 0.0f || top_clip.y1 != 0.0f) {
                 new_clip = rect_intersection(new_clip, top_clip);
             }
@@ -298,110 +412,20 @@ ui_end(ui_context_t* context) {
             ui_r_push_clip_mask(new_clip);
         }
         
-        // shadow
-        if (node->flags & ui_flag_draw_shadow) {
-            ui_r_set_next_color(color(0x00000090));
-            ui_r_set_next_softness(6.0f);
-            ui_r_draw_rect(rect_translate(rect_grow(node->rect, 4.0f), 4.0f));
-        }
-        
-        // background
-        if (node->flags & ui_flag_draw_background) {
-            
-            // colors
-            color_t color_background = ui_color_from_key(ui_key_from_string(node->tags_key, str("background")));
-            color_t color_effect = ui_color_from_key(ui_key_from_string(node->tags_key, str("effect")));
-            
-            if (node->flags & ui_flag_draw_hover_effects) {
-                color_background = color_lerp(color_background, color_blend(color_background, color(0xffffff05)), node->hover_t);
-                color_effect = color_lerp(color_effect, color_blend(color_effect, color(0xffeedd25)), node->hover_t);
-            }
-            
-            if (node->flags & ui_flag_draw_active_effects) {
-                color_background = color_lerp(color_background, color_blend(color_background, color(0xffffff05)), node->active_t);
-                color_effect = color_lerp(color_effect, color_blend(color_effect, color(0xffeedd65)), node->active_t);
-            }
-            
-            // draw main background
-            ui_r_set_next_color(color_background);
-            ui_r_set_next_rounding(node->rounding);
-            ui_r_draw_rect(node->rect);
-            
-            // draw effects
-            if (node->flags & ui_flag_draw_hover_effects | ui_flag_draw_active_effects) {
-                f32 height = rect_height(node->rect);
-                f32 height_top = 0.5f;
-                f32 height_bot = 0.25f;
-                
-                if (ui_key_equals(ui_key_from_string({ 0 }, str("textbox")), node->tags_key)) {
-                    height_top = 0.25f;
-                    height_bot = 0.5f;
-                }
-                
-                rect_t top_rect = rect_cut_bottom(node->rect, roundf(height * height_top));
-                rect_t bottom_rect = rect_cut_top(node->rect, roundf(height * height_bot));
-                color_t color_transparent = color_effect;
-                color_transparent.a = 0.0f;
-                
-                ui_r_set_next_color0(color_transparent);
-                ui_r_set_next_color1(color_effect);
-                ui_r_set_next_color2(color_transparent);
-                ui_r_set_next_color3(color_effect);
-                ui_r_set_next_rounding(vec4(node->rounding.x, 0.0f, node->rounding.z, 0.0f));
-                ui_r_draw_rect(top_rect);
-                
-                ui_r_set_next_color0(color_effect);
-                ui_r_set_next_color1(color_transparent);
-                ui_r_set_next_color2(color_effect);
-                ui_r_set_next_color3(color_transparent);
-                ui_r_set_next_rounding(vec4(0.0f, node->rounding.y, 0.0f, node->rounding.w));
-                ui_r_draw_rect(bottom_rect);
-            }
-            
-        }
-        
-        // border
-        if (node->flags & ui_flag_draw_border) {
-            
-            color_t border_main_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("border")));
-            color_t border_highlight_color = color_blend(border_main_color, color(0xffffff35));
-            color_t border_lowlight_color = color_blend(border_main_color, color(0x00000035));
-            
-            ui_r_set_next_color0(border_main_color);
-            ui_r_set_next_color1(border_main_color);
-            ui_r_set_next_color2(border_highlight_color);
-            ui_r_set_next_color3(border_lowlight_color);
-            ui_r_set_next_rounding(node->rounding);
-            ui_r_set_next_thickness(1.0f);
-            ui_r_draw_rect(rect_shrink(node->rect, 1.0f));
-            
-            color_t border_dark_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("background")));
-            border_dark_color = color(0x131313ff);
-            
-            ui_r_set_next_color(border_dark_color);
-            ui_r_set_next_rounding(node->rounding);
-            ui_r_set_next_thickness(1.0f);
-            ui_r_draw_rect(node->rect);
-        }
-        
         // text
+        prof_begin("ui_draw_text");
         if (node->flags & ui_flag_draw_text) {
-            color_t shadow_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("shadow")));
-            color_t text_color = ui_color_from_key(ui_key_from_string(node->tags_key, str("text")));
+            color_t text_color = ui_color_from_key_name(node->tags_key, str("text"));
+            color_t shadow_color = ui_color_from_key_name(node->tags_key, str("text shadow"));
             vec2_t text_pos = ui_text_align(node->font, node->font_size, node->label, node->rect, node->text_alignment);
             
-            ui_r_push_font(node->font);
-            ui_r_push_font_size(node->font_size);
-            
             ui_r_set_next_color(shadow_color);
-            ui_r_draw_text(node->label, vec2_add(text_pos, 1.0f));
+            ui_r_draw_text(node->label, vec2_add(text_pos, 1.0f), node->font, node->font_size);
             
             ui_r_set_next_color(text_color);
-            ui_r_draw_text(node->label, text_pos);
-            
-            ui_r_pop_font();
-            ui_r_pop_font_size();
+            ui_r_draw_text(node->label, text_pos, node->font, node->font_size);
         }
+        prof_end();
         
         // custom draw
         if (node->flags & ui_flag_draw_custom) {
@@ -418,29 +442,65 @@ ui_end(ui_context_t* context) {
             if (n->flags & ui_flag_clip) { ui_r_pop_clip_mask(); }
         }
         
+        // border
+        if (node->flags & ui_flag_draw_border) {
+            
+            color_t border_color = ui_color_from_key_name(node->tags_key, str("border"));
+            color_t border_shadow_color = ui_color_from_key_name(node->tags_key, str("border shadow"));
+            
+            vec4_t outer_rounding = vec4_add(node->rounding, 1.0f);
+            ui_r_set_next_clip_mask(top_clip);
+            ui_r_set_next_color(border_shadow_color);
+            ui_r_draw_rect(rect_grow(node->rect, 1.0f), 1.0f, 0.25f, outer_rounding);
+            
+            ui_r_set_next_clip_mask(top_clip);
+            ui_r_set_next_color(border_color);
+            ui_r_draw_rect(node->rect, 1.0f, 0.25f, node->rounding);
+            
+        }
+        
         node = rec.next;
     }
     
+    prof_end();
     
-    // render ui
+    // finish build
+    context->build_index++;
+    arena_clear(ui_build_arena());
+    arena_clear(context->event_arena);
+    context->event_list.first = nullptr;
+    context->event_list.last = nullptr;
+    ui_context_set_active(nullptr);
     
-    // update constant buffer
-    uvec2_t renderer_size = gfx_renderer_get_size(context->renderer);
-    rect_t viewport = rect(0.0f, 0.0f, (f32)renderer_size.x, (f32)renderer_size.y);
-    context->constants.window_size = vec2((f32)renderer_size.x, (f32)renderer_size.y);
     
-    gfx_buffer_fill(context->constant_buffer, &context->constants, sizeof(ui_r_constants_t));
+    prof_end();
+}
+
+function void
+ui_render(ui_context_t* context) {
+    prof_begin("ui_render");
+    
+    // update constant buffers
+    uvec2_t context_size = gfx_context_get_size(context->gfx_context);
+    rect_t viewport = rect(0.0f, 0.0f, (f32)context_size.x, (f32)context_size.y);
+    context->window_constants.window_size = vec2((f32)context_size.x, (f32)context_size.y);
+    
+    gfx_buffer_fill(context->constant_buffer_window, &context->window_constants, sizeof(ui_r_window_constants_t));
+    gfx_buffer_fill(context->constant_buffer_clip_masks, &context->clip_mask_constants, sizeof(ui_r_clip_mask_constants_t));
+    gfx_buffer_fill(context->constant_buffer_colors, &context->color_constants, sizeof(ui_r_color_constants_t));
     
     // set state
     gfx_set_viewport(viewport);
     gfx_set_scissor(viewport);
     gfx_set_rasterizer(gfx_fill_solid, gfx_cull_back);
     gfx_set_topology(gfx_topology_tri_strip);
-    gfx_set_sampler(gfx_filter_linear, gfx_wrap_repeat, 0);
+    gfx_set_sampler(gfx_filter_nearest, gfx_wrap_repeat, 0);
     gfx_set_depth_mode(gfx_depth_none);
-    gfx_set_shader(context->vertex_shader);
-    gfx_set_shader(context->pixel_shader);
-    gfx_set_buffer(context->constant_buffer);
+    gfx_set_shader(ui_vertex_shader);
+    gfx_set_shader(ui_pixel_shader);
+    gfx_set_buffer(context->constant_buffer_window, 0);
+    gfx_set_buffer(context->constant_buffer_clip_masks, 1);
+    gfx_set_buffer(context->constant_buffer_colors, 2);
     gfx_set_texture_array(context->texture_list, context->texture_count, 0);
     
     for (ui_r_batch_t* batch = context->batch_first; batch != 0; batch = batch->next) {
@@ -452,20 +512,13 @@ ui_end(ui_context_t* context) {
         gfx_draw_instanced(4, batch->instance_count);
     }
     
-    
     // clear batches
     arena_clear(context->batch_arena);
     context->batch_first = nullptr;
     context->batch_last = nullptr;
     
-    context->build_index++;
-    arena_clear(ui_build_arena());
-    arena_clear(context->event_arena);
-    context->event_list.first = nullptr;
-    context->event_list.last = nullptr;
-    ui_context_set_active(nullptr);
-    
     prof_end();
+    
 }
 
 function arena_t*
@@ -477,7 +530,7 @@ ui_build_arena() {
 //- context functions 
 
 function ui_context_t* 
-ui_context_create(os_handle_t window, gfx_handle_t renderer) {
+ui_context_create(os_handle_t window, gfx_handle_t gfx_context) {
     
     arena_t* arena = arena_create(megabytes(256));
     ui_context_t* context = (ui_context_t*)arena_alloc(arena, sizeof(ui_context_t));
@@ -490,35 +543,31 @@ ui_context_create(os_handle_t window, gfx_handle_t renderer) {
     context->event_arena = arena_create(kilobytes(8));
     
     context->window = window;
-    context->renderer = renderer;
+    context->gfx_context = gfx_context;
     
+    // allocate caches
     context->node_hash_list_count = 4096;
     context->node_hash_list = (ui_node_hash_list_t*)arena_alloc(arena, sizeof(ui_node_hash_list_t) * context->node_hash_list_count);
     
-    context->anim_hash_list_count = 4096;
+    context->anim_hash_list_count = 512;
     context->anim_hash_list = (ui_anim_hash_list_t*)arena_alloc(arena, sizeof(ui_anim_hash_list_t) * context->anim_hash_list_count);
     
-    context->theme_pattern_hash_list_count = 512;
-    context->theme_pattern_hash_list = (ui_theme_pattern_hash_list_t*)arena_alloc(arena, sizeof(ui_theme_pattern_hash_list_t) * context->theme_pattern_hash_list_count);
+    context->data_hash_list_count = 512;
+    context->data_hash_list = (ui_data_hash_list_t*)arena_alloc(arena, sizeof(ui_data_hash_list_t) * context->data_hash_list_count);
+    
+    context->color_hash_list_count = 512;
+    context->color_hash_list = (ui_color_cache_hash_list_t*)arena_alloc(arena, sizeof(ui_color_cache_hash_list_t) * context->color_hash_list_count);
+    
+    // theme
+    context->theme = (ui_theme_t*)arena_alloc(arena, sizeof(ui_theme_t));
     
     // rendering
     context->batch_arena = arena_create(megabytes(64));
     
-    context->vertex_shader = gfx_shader_load(str("res/shaders/shader_ui.hlsl"), gfx_shader_flag_vertex | gfx_shader_flag_per_instance);
-    context->pixel_shader = gfx_shader_load(str("res/shaders/shader_ui.hlsl"), gfx_shader_flag_pixel);
-    
     context->instance_buffer = gfx_buffer_create(gfx_buffer_type_vertex, kilobytes(256));
-    context->constant_buffer = gfx_buffer_create(gfx_buffer_type_constant, kilobytes(4));
-    
-    u32 data = 0xffffffff;
-    context->texture = gfx_texture_create(uvec2(1, 1), gfx_texture_format_rgba8, &data);
-    
-    // theme
-    ui_context_add_color(context, str("background"), color(0x252629ff));
-    ui_context_add_color(context, str("shadow"), color(0x00000080));
-    ui_context_add_color(context, str("text"), color(0xe2e2e3ff));
-    ui_context_add_color(context, str("border"), color(0xffffff35));
-    ui_context_add_color(context, str("effect"), color(0x393a3fff));
+    context->constant_buffer_window = gfx_buffer_create(gfx_buffer_type_constant, sizeof(ui_r_window_constants_t));
+    context->constant_buffer_clip_masks = gfx_buffer_create(gfx_buffer_type_constant, sizeof(ui_r_clip_mask_constants_t));
+    context->constant_buffer_colors = gfx_buffer_create(gfx_buffer_type_constant, sizeof(ui_r_color_constants_t));
     
     // default stack values
 #define ui_stack(name, type, initial)\
@@ -579,10 +628,10 @@ context->name##_r_default_node.v = initial;
 function void 
 ui_context_release(ui_context_t* context) {
     
-    gfx_texture_release(context->texture);
-    
     gfx_buffer_release(context->instance_buffer);
-    gfx_buffer_release(context->constant_buffer);
+    gfx_buffer_release(context->constant_buffer_window);
+    gfx_buffer_release(context->constant_buffer_clip_masks);
+    gfx_buffer_release(context->constant_buffer_colors);
     
     arena_release(context->batch_arena);
     arena_release(context->event_arena);
@@ -593,40 +642,38 @@ ui_context_release(ui_context_t* context) {
 }
 
 function void
-ui_context_add_color(ui_context_t* context, str_t tags, color_t color) {
-    
-    temp_t scratch = scratch_begin();
-    
-    // break up string by spaces.
-    str_t delim = str(" ");
-    str_list_t str_list = str_split(scratch.arena, tags, delim.data, 1);
-    
-    // make key based on tags
-    ui_key_t prev_key = { 0 };
-    ui_key_t current_key = { 0 };
-    for (str_node_t* node = str_list.first; node != nullptr; node = node->next) {
-        current_key = ui_key_from_string(prev_key, node->string); 
-        prev_key = current_key;
-    }
-    
-    // add theme pattern
-    ui_theme_pattern_t* theme_pattern = (ui_theme_pattern_t*)arena_alloc(context->arena, sizeof(ui_theme_pattern_t));
-    theme_pattern->key = current_key;
-    theme_pattern->color = color;
-    
-    u32 index = current_key.data[0] % context->theme_pattern_hash_list_count;
-    ui_theme_pattern_hash_list_t* hash_list = &context->theme_pattern_hash_list[index];
-    dll_push_back(hash_list->first, hash_list->last, theme_pattern);
-    
-    scratch_end(scratch);
-}
-
-function void
 ui_context_set_active(ui_context_t* context) {
     ui_active_context = context;
 }
 
-//- key functions  
+function void
+ui_context_default_theme(ui_context_t* context) {
+    
+    ui_context_set_color(context, str("background"), color(0x232627ff));
+    ui_context_set_color(context, str("background alt"), color(0x141718ff));
+    ui_context_set_color(context, str("background shadow"), color(0x00000080));
+    ui_context_set_color(context, str("background tooltip"), color(0x131416ff));
+    ui_context_set_color(context, str("hover"), color(0xe7f1ff25));
+    ui_context_set_color(context, str("active"), color(0xe7f1ff25));
+    ui_context_set_color(context, str("border"), color(0x343839ff));
+    ui_context_set_color(context, str("border shadow"), color(0x00000080));
+    ui_context_set_color(context, str("text"), color(0xe2e2e3ff));
+    ui_context_set_color(context, str("text shadow"), color(0x00000080));
+    ui_context_set_color(context, str("accent"), color(0x0084ffff));
+    ui_context_set_color(context, str("background list"), color(0x141718ff));
+    ui_context_set_color(context, str("background list alt"), color(0x191c1dff));
+    ui_context_set_color(context, str("text icon"), color(0x85cf60ff));
+    ui_context_set_color(context, str("border red"), color(0xe9e2835ff));
+    ui_context_set_color(context, str("border green"), color(0x328345ff));
+    ui_context_set_color(context, str("border blue"), color(0x0474c1ff));
+    
+    ui_context_set_color(context, str("text green"), color(0x22C55Eff));
+    ui_context_set_color(context, str("text orange"), color(0xF97316ff));
+    ui_context_set_color(context, str("text red"), color(0xEF4444ff));
+    
+}
+
+//- key functions
 
 function ui_key_t 
 ui_key_from_string(ui_key_t seed, str_t string) {
@@ -785,6 +832,25 @@ ui_text_align(font_handle_t font, f32 font_size, str_t text, rect_t rect, ui_tex
     }
     result.x = floorf(result.x);
     return result;
+}
+
+function u32 
+ui_text_index_from_pos(font_handle_t font, f32 font_size, str_t text, f32 pos) {
+    
+    u32 offset_index = 0;
+    
+    f32 width = 0.0f;
+	for (u32 offset = 0; offset <= text.size; offset++) {
+		char c = *(text.data + offset);
+		font_glyph_t* glyph = font_get_glyph(font, font_size, (u8)c);
+        offset_index = offset;
+        if (pos <= (width + (glyph->advance * 0.5f))) {
+            break;
+        }
+		width += glyph->advance;
+	}
+    
+    return offset_index;
 }
 
 //- text point functions 
@@ -1054,26 +1120,7 @@ ui_key_binding_find(os_key key, os_modifiers modifiers) {
     return binding;
 }
 
-//- theme functions 
-
-function color_t 
-ui_color_from_key(ui_key_t key) {
-    
-    color_t result = { 0 };
-    
-    u32 index = key.data[0] % ui_active_context->theme_pattern_hash_list_count;
-    for (ui_theme_pattern_t* pattern = ui_active_context->theme_pattern_hash_list[index].first; pattern != nullptr; pattern = pattern->next) {
-        if (ui_key_equals(pattern->key, key)) {
-            result = pattern->color;
-            break;
-        }
-    }
-    
-    return result;
-}
-
-//- animation functions 
-
+//- animation functions
 
 function ui_anim_params_t 
 ui_anim_params_create(f32 initial, f32 target, f32 rate) {
@@ -1143,6 +1190,296 @@ ui_anim(ui_key_t key, f32 initial, f32 target, f32 rate) {
 	return ui_anim_ex(key, params);
 }
 
+//- data 
+
+function void*
+ui_data(ui_key_t key, ui_data_type type, void* initial) {
+    
+    i32 index = key.data[0] % ui_active_context->data_hash_list_count;
+    
+    // search for in list
+    ui_data_node_t* node = nullptr;
+    if (!ui_key_equals(key, { 0 })) {
+        for (ui_data_node_t* n = ui_active_context->data_hash_list[index].first; n != nullptr; n = n->list_next) {
+            if (ui_key_equals(key, n->key)) {
+                node = n;
+                break;
+            }
+        }
+    }
+    
+    // if we didn't find one, allocate it
+    if (node == nullptr) {
+        node = ui_active_context->data_node_free;
+        if (node != nullptr) {
+            stack_pop_n(ui_active_context->data_node_free, list_next);
+        } else {
+            node = (ui_data_node_t*)arena_alloc(ui_active_context->arena, sizeof(ui_data_node_t));
+        }
+        memset(node, 0, sizeof(ui_data_node_t));
+        
+        // fill struct
+        node->first_build_index = ui_active_context->build_index;
+        node->key = key;
+        node->type = type;
+        
+        // set initial
+        switch (node->type) {
+            case ui_data_type_f32: { node->f32_value = *(f32*)initial; break; }
+            case ui_data_type_i32: { node->i32_value = *(i32*)initial; break; }
+            case ui_data_type_u32: { node->u32_value = *(u32*)initial; break; }
+            case ui_data_type_vec2: { node->vec2_value = *(vec2_t*)initial; break; }
+            case ui_data_type_vec3: { node->vec3_value = *(vec3_t*)initial; break; }
+            case ui_data_type_vec4: { node->vec4_value = *(vec4_t*)initial; break; }
+            case ui_data_type_color: { node->color_value = *(color_t*)initial; break; }
+        }
+        
+        // add to list
+        dll_push_back_np(ui_active_context->data_hash_list[index].first, ui_active_context->data_hash_list[index].last, node, list_next, list_prev);
+        
+    } else {
+        // remove from lru list
+        dll_remove_np(ui_active_context->data_node_lru, ui_active_context->data_node_mru, node, lru_next, lru_prev);
+    }
+    
+    // update node
+    node->last_build_index = ui_active_context->build_index;
+    dll_push_back_np(ui_active_context->data_node_lru, ui_active_context->data_node_mru, node, lru_next, lru_prev);
+    
+    // get data
+    void* data = &node->f32_value;
+    
+    return data;
+}
+
+//- color
+
+function ui_color_cache_node_t*
+_ui_color_cache_find(ui_key_t key) {
+    ui_color_cache_node_t* result = nullptr;
+    
+    u32 index = key.data[0] % ui_active_context->color_hash_list_count;
+    ui_color_cache_hash_list_t* hash_list = &ui_active_context->color_hash_list[index];
+    for (ui_color_cache_node_t* n = hash_list->first; n != nullptr; n = n->list_next) {
+        if (ui_key_equals(n->key, key)) {
+            result= n;
+            break;
+        }
+    }
+    
+    return result;
+}
+
+function color_t 
+ui_color_from_key_name(ui_key_t key, str_t extras) {
+    
+    color_t result = { 0 };
+    temp_t scratch = scratch_begin();
+    
+    // split extras 
+    str_list_t extras_list = str_split(scratch.arena, extras, (u8*)" ", 1);
+    
+    // compute key
+    ui_key_t final_key = key;
+    for (str_node_t* node = extras_list.first; node != nullptr; node = node->next) {
+        final_key = ui_key_from_string(final_key, node->string);
+    }
+    
+    // find color node in cache
+    ui_color_cache_node_t* node = nullptr;
+    
+    u32 index = final_key.data[0] % ui_active_context->color_hash_list_count;
+    ui_color_cache_hash_list_t* hash_list = &ui_active_context->color_hash_list[index];
+    for (ui_color_cache_node_t* n = hash_list->first; n != nullptr; n = n->list_next) {
+        if (ui_key_equals(n->key, final_key)) {
+            node = n;
+            break;
+        }
+    }
+    
+    
+    if (node == nullptr || node->last_build_index < ui_active_context->build_index) {
+        
+        // get tag strings from tags cache
+        str_t* tag_strings = nullptr;
+        u32 tag_string_count = 0;
+        
+        u32 index = key.data[0] % ui_active_context->tags_hash_list_count;
+        ui_tags_cache_hash_list_t* tag_hash_list = &ui_active_context->tags_hash_list[index];
+        for (ui_tags_cache_node_t* node = tag_hash_list->first; node != nullptr; node = node->next) {
+            if (ui_key_equals(node->key, key)) {
+                tag_strings = node->tags;
+                tag_string_count = node->tag_count;
+                break;
+            }
+        }
+        
+        // find best match in theme pattern from tag strings
+        ui_theme_t* theme = ui_active_context->theme;
+        ui_theme_pattern_t* pattern = nullptr;
+        u32 best_match_count = 0;
+        for (ui_theme_pattern_t* p = theme->first; p != nullptr; p = p->next) {
+            
+            u32 match_count = 0;
+            b8 name_matches = false;
+            b8 all_tags_in_key = true;
+            
+            for (i32 i = 0; i < p->tag_count; i++) {
+                b8 tag_in_key = false;
+                
+                for (i32 j = 0; j < tag_string_count + extras_list.count; j++) {
+                    str_t key_string = j < tag_string_count ? tag_strings[j] : str_list_get_index(extras_list, j - tag_string_count);
+                    if (str_match(p->tags[i], key_string, 0)) {
+                        if (j == tag_string_count + extras_list.count - 1) {
+                            name_matches = true;
+                        }
+                        tag_in_key = true;
+                        match_count++;
+                        break;
+                    }
+                }
+                
+                if (!tag_in_key) {
+                    all_tags_in_key = false;
+                    break;
+                }
+            }
+            
+            if (name_matches && all_tags_in_key && match_count > best_match_count) {
+                pattern = p;
+                best_match_count = match_count;
+            }
+            
+            if (match_count == tag_string_count + extras_list.count) {
+                break;
+            }
+        }
+        
+        b8 node_is_new = false;
+        if (node == nullptr) {
+            node_is_new = true;
+            
+            node = ui_active_context->color_node_free;
+            if (node != nullptr) {
+                stack_pop_n(ui_active_context->color_node_free, list_next);
+            } else {
+                node = (ui_color_cache_node_t*)arena_alloc(ui_active_context->arena, sizeof(ui_color_cache_node_t));
+            }
+            dll_push_back_np(hash_list->first, hash_list->last, node, list_next, list_prev);
+            dll_push_back_np(ui_active_context->color_node_lru, ui_active_context->color_node_mru, node, lru_next, lru_prev);
+            node->key = final_key;
+            node->first_build_index = ui_active_context->build_index;
+        }
+        
+        if (pattern != nullptr) {
+            node->target_color = pattern->col;
+            if (node_is_new) {
+                node->current_color = pattern->col;
+            }
+        }
+    }
+    
+    if (node != nullptr && node->last_build_index < ui_active_context->build_index) {
+        node->last_build_index = ui_active_context->build_index;
+        dll_remove_np(ui_active_context->color_node_lru, ui_active_context->color_node_mru, node, lru_next, lru_prev);
+        dll_push_back_np(ui_active_context->color_node_lru, ui_active_context->color_node_mru, node, lru_next, lru_prev);
+    }
+    
+    if (node != nullptr) {
+        result = node->current_color;
+    }
+    
+    return result;
+}
+
+
+//- theme 
+
+function void 
+ui_theme_add_color(arena_t* arena, ui_theme_t* theme, str_t tags, color_t col) {
+    temp_t scratch = scratch_begin();
+    
+    // allocate theme pattern
+    ui_theme_pattern_t* pattern = (ui_theme_pattern_t*)arena_alloc(arena, sizeof(ui_theme_pattern_t));
+    dll_push_back(theme->first, theme->last, pattern);
+    
+    // create tags list
+    str_list_t tags_list = str_split(scratch.arena, tags, (u8*)" ", 1);
+    pattern->tag_count = tags_list.count;
+    pattern->tags = (str_t*)arena_alloc(arena, sizeof(str_t) * pattern->tag_count);
+    
+    // copy tags
+    i32 index = 0;
+    for (str_node_t* node = tags_list.first; node != nullptr; node = node->next) {
+        pattern->tags[index] = str_copy(arena, node->string);
+        index++;
+    }
+    
+    // set color
+    pattern->col = col;
+    
+    scratch_end(scratch);
+}
+
+function void
+ui_context_set_color(ui_context_t* context, str_t tags, color_t col) {
+    
+    temp_t scratch = scratch_begin();
+    
+    // create tags_list
+    str_list_t tags_list = str_split(scratch.arena, tags, (u8*)" ", 1);
+    str_t* tags_array = str_array_from_list(scratch.arena, &tags_list);
+    u32 tags_count = tags_list.count;
+    
+    // see if we can find pattern in theme
+    ui_theme_pattern_t* pattern = nullptr;
+    for (ui_theme_pattern_t* p = context->theme->first; p != nullptr; p = p->next) {
+        
+        // skip if we don't have same amount of tags
+        if (tags_count != p->tag_count) {
+            continue;
+        }
+        
+        // check if tags are the same
+        b8 all_tags_in_pattern = true;
+        for (i32 i = 0; i < tags_count; i++) {
+            if (!str_match(tags_array[i], p->tags[i])) {
+                all_tags_in_pattern = false;
+                break;
+            }
+        }
+        
+        // we found an existing pattern
+        if (all_tags_in_pattern) {
+            pattern = p;
+            break;
+        }
+        
+    }
+    
+    // we didn't find a pattern, so create it
+    if (pattern == nullptr) {
+        
+        pattern = (ui_theme_pattern_t*)arena_alloc(context->arena, sizeof(ui_theme_pattern_t));
+        dll_push_back(context->theme->first, context->theme->last, pattern);
+        
+        // fill pattern
+        pattern->tag_count = tags_count;
+        pattern->tags = (str_t*)arena_alloc(context->arena, sizeof(str_t) * pattern->tag_count);
+        
+        // copy tags
+        for (i32 i = 0; i < pattern->tag_count; i++) {
+            pattern->tags[i] = str_copy(context->arena, tags_array[i]);
+        }
+        
+    }
+    
+    // set the color
+    pattern->col = col;
+    
+    scratch_end(scratch);
+}
+
 //- drag state functions 
 
 function void 
@@ -1201,6 +1538,13 @@ ui_drag_delta() {
     return vec2_sub(ui_active_context->mouse_pos, ui_active_context->drag_start_pos);
 }
 
+
+function void
+ui_node_set_display_string(ui_node_t* node, str_t string) {
+    u32 hash_pos = str_find_substr(string, str("##"));
+    str_t display_string = { string.data, hash_pos };
+    node->label = display_string;
+}
 
 //- node functions 
 
@@ -1317,10 +1661,7 @@ ui_node_from_key(ui_node_flags flags, ui_key_t key) {
     }
     
     // tags
-    node->tags_key = { 0 };
-    if (ui_active_context->tags_stack_top != nullptr) {
-        node->tags_key = ui_active_context->tags_stack_top->key;
-    }
+    node->tags_key = ui_top_tags_key();
     
     // auto pop stacks
     ui_auto_pop_stacks();
@@ -1334,7 +1675,8 @@ ui_node_from_string(ui_node_flags flags, str_t string) {
     ui_key_t seed_key = ui_top_seed_key();
     ui_key_t key = ui_key_from_string(seed_key, string);
     ui_node_t* node = ui_node_from_key(flags, key);
-    node->label = string;
+    ui_node_set_display_string(node, string);
+    
     return node;
 }
 
@@ -1423,7 +1765,7 @@ ui_layout_solve_upward_dependent(ui_node_t* node, ui_axis axis) {
     switch (node->size_wanted[axis].type) {
         case ui_size_type_percent: {
             
-            // find a uitable parent
+            // find a suitable parent
             ui_node_t* fixed_parent = nullptr;
             for (ui_node_t* parent = node->tree_parent; parent != nullptr; parent = parent->tree_parent) {
                 if (parent->flags & (ui_flag_fixed_size_x << axis) ||
@@ -1610,7 +1952,12 @@ ui_layout_set_positions(ui_node_t* node, ui_axis axis) {
             }
             
         } else {
-            child->pos_target[axis] = parent_pos + child->pos_fixed[axis];
+            if (!(child->flags & (ui_flag_ignore_parent_offset_x << axis))) {
+                child->pos_target[axis] = parent_pos + child->pos_fixed[axis];
+            } else {
+                child->pos_target[axis] = child->pos_fixed[axis];
+            }
+            
         }
         
         if (!(child->flags & (ui_flag_anim_pos_x << axis)) ||
@@ -1654,7 +2001,21 @@ ui_interaction_from_node(ui_node_t* node) {
         }
     }
     
-    b8 mouse_in_bounds = rect_contains(clipped_rect, context->mouse_pos);
+    // block out popup context
+    b8 popup_is_ancestor = false;
+    for (ui_node_t* parent = node; parent != nullptr; parent = parent->tree_parent) {
+        if (parent == context->node_popup_root) {
+            popup_is_ancestor = true;
+            break;
+        }
+    }
+    
+    rect_t popup_rect = { 0 };
+    if (!popup_is_ancestor && context->popup_is_open) {
+        popup_rect = context->node_popup_root->rect;
+    }
+    
+    b8 mouse_in_bounds = rect_contains(clipped_rect, context->mouse_pos) && !rect_contains(popup_rect, context->mouse_pos);
     
     for (ui_event_t* event = context->event_list.first, *next = nullptr; event != nullptr; event = next) {
         next = event->next;
@@ -1814,6 +2175,11 @@ ui_interaction_from_node(ui_node_t* node) {
         result |= ui_mouse_over;
     }
     
+    // close popup
+    if (context->popup_is_open && !popup_is_ancestor && (result & (ui_left_pressed | ui_right_pressed | ui_middle_pressed))) {
+        ui_popup_close();
+    }
+    
     return result;
     
 }
@@ -1821,333 +2187,326 @@ ui_interaction_from_node(ui_node_t* node) {
 
 //- renderer functions
 
-
 function ui_r_instance_t*
 ui_r_get_instance() {
     
-	// find a batch
-	ui_r_batch_t* batch = nullptr;
+    // find a batch
+    ui_r_batch_t* batch = nullptr;
     
-	// search batch list
-	for (ui_r_batch_t* b = ui_active_context->batch_first; b != 0; b = b->next) {
+    // search batch list
+    for (ui_r_batch_t* b = ui_active_context->batch_first; b != 0; b = b->next) {
         
-		// if batch has space, and texture matches
-		if (((b->instance_count + 1) * sizeof(ui_r_instance_t)) < (kilobytes(256))) {
-			batch = b;
-			break;
-		}
-	}
+        // if batch has space, and texture matches
+        if (((b->instance_count + 1) * sizeof(ui_r_instance_t)) < (kilobytes(256))) {
+            batch = b;
+            break;
+        }
+    }
     
-	// else create one
-	if (batch == nullptr) {
+    // else create one
+    if (batch == nullptr) {
         
-		batch = (ui_r_batch_t*)arena_alloc(ui_active_context->batch_arena, sizeof(ui_r_batch_t));
-		
-		batch->instances = (ui_r_instance_t*)arena_alloc(ui_active_context->batch_arena, kilobytes(256));
-		batch->instance_count = 0;
-		
-		// add to batch list
-		dll_push_back(ui_active_context->batch_first, ui_active_context->batch_last, batch);
+        batch = (ui_r_batch_t*)arena_alloc(ui_active_context->batch_arena, sizeof(ui_r_batch_t));
         
-	}
+        batch->instances = (ui_r_instance_t*)arena_alloc(ui_active_context->batch_arena, kilobytes(256));
+        batch->instance_count = 0;
+        
+        // add to batch list
+        dll_push_back(ui_active_context->batch_first, ui_active_context->batch_last, batch);
+        
+    }
     
-	// get instance
-	ui_r_instance_t* instance = &batch->instances[batch->instance_count++];
-	memset(instance, 0, sizeof(ui_r_instance_t));
+    // get instance
+    ui_r_instance_t* instance = &batch->instances[batch->instance_count++];
+    memset(instance, 0, sizeof(ui_r_instance_t));
     
-	return instance;
+    return instance;
 }
 
-function i32
+function u32
 ui_r_get_texture_index(gfx_handle_t texture) {
     
-	// find index if in list
-	i32 index = 0;
-	for (; index < ui_active_context->texture_count; index++) {
-		if (gfx_handle_equals(texture, ui_active_context->texture_list[index])) {
-			break;
-		}
-	}
+    // find index if in list
+    i32 index = 0;
     
-	// we didn't find one, add to list
-	if (index == ui_active_context->texture_count) {
-		ui_active_context->texture_list[ui_active_context->texture_count] = texture;
-		ui_active_context->texture_count++;
-	}
+    for (; index < ui_active_context->texture_count; index++) {
+        if (gfx_handle_equals(texture, ui_active_context->texture_list[index])) {
+            break;
+        }
+    }
     
-	return index;
+    // we didn't find one, add to list
+    if (index == ui_active_context->texture_count) {
+        ui_active_context->texture_list[ui_active_context->texture_count] = texture;
+        ui_active_context->texture_count++;
+    }
+    
+    return index;
     
 }
 
-function i32
+function u32
 ui_r_get_clip_mask_index(rect_t rect) {
     
-	// find index if in list
-	i32 index = 0;
-	for (; index < ui_active_context->clip_mask_count; index++) {
-		if (rect_equals(rect, ui_active_context->constants.clip_masks[index])) {
-			break;
-		}
-	}
+    // TODO: turn this into a hash list and maybe cache over multiple frames
     
-	// we didn't find one, add to list
-	if (index == ui_active_context->clip_mask_count) {
-		ui_active_context->constants.clip_masks[ui_active_context->clip_mask_count] = rect;
-		ui_active_context->clip_mask_count++;
-	}
+    // find index if in list
+    i32 index = 0;
+    for (; index < ui_active_context->clip_mask_count; index++) {
+        if (rect_equals(rect, ui_active_context->clip_mask_constants.clip_masks[index])) {
+            break;
+        }
+    }
     
-	return index;
+    // if we didn't find one, add to list
+    if (index == ui_active_context->clip_mask_count) {
+        ui_active_context->clip_mask_constants.clip_masks[ui_active_context->clip_mask_count] = rect;
+        ui_active_context->clip_mask_count++;
+    }
+    
+    return index;
 }
 
-inlnfunc u32
-ui_r_pack_indices(u32 shape, u32 texture, u32 clip) {
-	return (shape << 24) | (texture << 16) | (clip << 8);
-}
-
-
-function void 
-ui_r_draw_rect(rect_t rect) {
+function u32
+ui_r_get_color_index(color_t col) {
     
-	ui_r_instance_t* instance = ui_r_get_instance();
+    // find index if in list
+    i32 index = 0;
+    for (; index < ui_active_context->color_count; index++) {
+        if (color_equals(col, ui_active_context->color_constants.colors[index])) {
+            break;
+        }
+    }
     
-	rect_validate(rect);
+    // if we didn't find one, add to list
+    if (index == ui_active_context->color_count) {
+        ui_active_context->color_constants.colors[ui_active_context->color_count] = col;
+        ui_active_context->color_count++;
+    }
     
-	instance->bbox = rect;
-	instance->tex = {0.0f, 0.0f, 1.0f, 1.0f};
-	
-	instance->color0 = ui_r_top_color0();
-	instance->color1 = ui_r_top_color1();
-	instance->color2 = ui_r_top_color2();
-	instance->color3 = ui_r_top_color3();
-    
-	instance->radii = ui_r_top_rounding();
-	instance->thickness = ui_r_top_thickness();
-	instance->softness = ui_r_top_softness();
-    
-	instance->indices = ui_r_pack_indices(ui_r_shape_rect,
-                                          ui_r_get_texture_index(ui_r_top_texture()),
-                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
-    
-	ui_r_auto_pop_stacks();
+    return index;
 }
 
 function void
-ui_r_draw_image(rect_t rect) {
-    
-	ui_r_instance_t* instance = ui_r_get_instance();
-    
-	rect_validate(rect);
-    
-	instance->bbox = rect;
-	instance->tex = { 0.0f, 0.0f, 1.0f, 1.0f };
-    
-	instance->color0 = ui_r_top_color0();
-	instance->color1 = ui_r_top_color1();
-	instance->color2 = ui_r_top_color2();
-	instance->color3 = ui_r_top_color3();
-    
-	instance->radii = ui_r_top_rounding();
-	instance->thickness = ui_r_top_thickness();
-	instance->softness = ui_r_top_softness();
-    
-	instance->indices = ui_r_pack_indices(ui_r_shape_rect,
-                                          ui_r_get_texture_index(ui_r_top_texture()),
-                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
-    
-	ui_r_auto_pop_stacks();
-    
+ui_r_instance_set_texture(ui_r_instance_t* instance, gfx_handle_t texture) {
+    instance->texture_index = ui_r_get_texture_index(texture);
 }
 
-function void
-ui_r_draw_quad(vec2_t p0, vec2_t p1, vec2_t p2, vec2_t p3) {
+function ui_r_instance_t* 
+ui_r_draw_rect(rect_t rect, f32 thickness, f32 softness, vec4_t rounding) {
     
-	// order: (0, 0), (0, 1), (1, 1), (1, 0);
+    ui_r_instance_t* instance = ui_r_get_instance();
     
-	ui_r_instance_t* instance = ui_r_get_instance();
+    rect_validate(rect);
     
-	f32 softness = ui_r_top_softness();
+    instance->p0 = rect.v0;
+    instance->p1 = rect.v1;
+    instance->uv0 = vec2(0.0f);
+    instance->uv1 = vec2(1.0f);
     
-	f32 min_x = min(min(min(p0.x, p1.x), p2.x), p3.x);
-	f32 min_y = min(min(min(p0.y, p1.y), p2.y), p3.y);
-	f32 max_x = max(max(max(p0.x, p1.x), p2.x), p3.x);
-	f32 max_y = max(max(max(p0.y, p1.y), p2.y), p3.y);
+    instance->softness = softness;
+    instance->thickness = thickness;
     
-	rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness);
+    instance->params_0 = rounding.x;
+    instance->params_1 = rounding.y;
+    instance->params_2 = rounding.z;
+    instance->params_3 = rounding.w;
     
-	vec2_t c = rect_center(bbox);
-	vec2_t c_p0 = vec2_sub(p0, c);
-	vec2_t c_p1 = vec2_sub(p1, c);
-	vec2_t c_p2 = vec2_sub(p2, c);
-	vec2_t c_p3 = vec2_sub(p3, c);
+    instance->shape_index = ui_r_shape_rect;
+    instance->clip_mask_index = ui_r_get_clip_mask_index(ui_r_top_clip_mask());
+    instance->texture_index = -1;
     
-	instance->bbox = bbox;
+    instance->color_index_0 = ui_r_get_color_index(ui_r_top_color0());
+    instance->color_index_1 = ui_r_get_color_index(ui_r_top_color1());
+    instance->color_index_2 = ui_r_get_color_index(ui_r_top_color2());
+    instance->color_index_3 = ui_r_get_color_index(ui_r_top_color3());
     
-	instance->color0 = ui_r_top_color0();
-	instance->color1 = ui_r_top_color1();
-	instance->color2 = ui_r_top_color2();
-	instance->color3 = ui_r_top_color3();
+    ui_r_auto_pop_stacks();
     
-	instance->point0 = c_p0;
-	instance->point1 = c_p1;
-	instance->point2 = c_p2;
-	instance->point3 = c_p3;
-    
-	instance->thickness = ui_r_top_thickness();
-	instance->softness = softness;
-    
-	instance->indices = ui_r_pack_indices(ui_r_shape_quad,
-                                          ui_r_get_texture_index(ui_r_top_texture()),
-                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
-    
-	ui_r_auto_pop_stacks();
+    return instance;
 }
 
-function void
-ui_r_draw_line(vec2_t p0, vec2_t p1) {
+function ui_r_instance_t*
+ui_r_draw_line(vec2_t p0, vec2_t p1, f32 thickness, f32 softness) {
     
-	ui_r_instance_t* instance = ui_r_get_instance();
+    ui_r_instance_t* instance = ui_r_get_instance();
     
-	f32 thickness = ui_r_top_thickness();
-	f32 softness = ui_r_top_softness();
+    // calculate bounding box
+    f32 min_x = min(p0.x, p1.x);
+    f32 min_y = min(p0.y, p1.y);
+    f32 max_x = max(p0.x, p1.x);
+    f32 max_y = max(p0.y, p1.y);
+    rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness + thickness + 2.0f);
     
-	f32 min_x = min(p0.x, p1.x);
-	f32 min_y = min(p0.y, p1.y);
-	f32 max_x = max(p0.x, p1.x);
-	f32 max_y = max(p0.y, p1.y);
+    vec2_t c = rect_center(bbox);
+    vec2_t c_p0 = vec2_sub(c, p0);
+    vec2_t c_p1 = vec2_sub(c, p1);
     
-	rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness + thickness + 2.0f);
+    instance->p0 = bbox.v0;
+    instance->p1 = bbox.v1;
     
-	vec2_t c = rect_center(bbox);
-	vec2_t c_p0 = vec2_sub(c, p0);
-	vec2_t c_p1 = vec2_sub(c, p1);
+    instance->softness = softness;
+    instance->thickness = thickness;
+    instance->params_0 = c_p0.x;
+    instance->params_1 = c_p0.y;
+    instance->params_2 = c_p1.x;
+    instance->params_3 = c_p1.y;
     
-	instance->bbox = bbox;
+    instance->shape_index = ui_r_shape_line;
+    instance->clip_mask_index = ui_r_get_clip_mask_index(ui_r_top_clip_mask());
+    instance->texture_index = -1;
     
-	instance->color0 = ui_r_top_color0();
-	instance->color1 = ui_r_top_color1();
+    instance->color_index_0 = ui_r_get_color_index(ui_r_top_color0());
+    instance->color_index_1 = ui_r_get_color_index(ui_r_top_color1());
     
-	instance->point0 = c_p0;
-	instance->point1 = c_p1;
+    ui_r_auto_pop_stacks();
     
-	instance->thickness = thickness;
-	instance->softness = softness;
-    
-	instance->indices = ui_r_pack_indices(ui_r_shape_line,
-                                          ui_r_get_texture_index(ui_r_top_texture()),
-                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
-    
-	ui_r_auto_pop_stacks();
+    return instance;
 }
 
-function void 
-ui_r_draw_circle(vec2_t pos, f32 radius, f32 start_angle, f32 end_angle) {
-	
-	ui_r_instance_t* instance = ui_r_get_instance();
-	
-	f32 softness = ui_r_top_softness();
+function ui_r_instance_t*
+ui_r_draw_circle(vec2_t pos, f32 radius, f32 thickness, f32 softness) {
     
-	instance->bbox = rect_grow(rect(pos.x - radius, pos.y - radius, pos.x + radius, pos.y + radius), softness);
+    ui_r_instance_t* instance = ui_r_get_instance();
     
-	instance->color0 = ui_r_top_color0();
-	instance->color1 = ui_r_top_color1();
-	instance->color2 = ui_r_top_color2();
-	instance->color3 = ui_r_top_color3();
+    rect_t bbox = rect_grow(rect(pos.x - radius, pos.y - radius, pos.x + radius, pos.y + radius), softness);
     
-	instance->point0 = vec2(radians(start_angle), radians(end_angle));
-	
-	instance->thickness = ui_r_top_thickness();
-	instance->softness = softness;
+    instance->p0 = bbox.v0;
+    instance->p1 = bbox.v1;
     
-	instance->indices = ui_r_pack_indices(ui_r_shape_circle,
-                                          ui_r_get_texture_index(ui_r_top_texture()),
-                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    instance->softness = softness;
+    instance->thickness = thickness;
     
+    instance->shape_index = ui_r_shape_circle;
+    instance->clip_mask_index = ui_r_get_clip_mask_index(ui_r_top_clip_mask());
+    instance->texture_index = -1;
     
-	ui_r_auto_pop_stacks();
+    instance->color_index_0 = ui_r_get_color_index(ui_r_top_color0());
+    instance->color_index_1 = ui_r_get_color_index(ui_r_top_color1());
+    instance->color_index_2 = ui_r_get_color_index(ui_r_top_color2());
+    instance->color_index_3 = ui_r_get_color_index(ui_r_top_color3());
+    
+    ui_r_auto_pop_stacks();
+    
+    return instance;
 } 
 
-function void
-ui_r_draw_tri(vec2_t p0, vec2_t p1, vec2_t p2) {
+function ui_r_instance_t*
+ui_r_draw_ring(vec2_t pos, f32 radius, f32 start_angle, f32 end_angle, f32 thickness, f32 softness) {
     
-	ui_r_instance_t* instance = ui_r_get_instance();
+    ui_r_instance_t* instance = ui_r_get_instance();
     
-	f32 softness = ui_r_top_softness();
+    rect_t bbox = rect_grow(rect(pos.x - radius, pos.y - radius, pos.x + radius, pos.y + radius), softness);
     
-	f32 min_x = min(min(p0.x, p1.x), p2.x);
-	f32 min_y = min(min(p0.y, p1.y), p2.y);
-	f32 max_x = max(max(p0.x, p1.x), p2.x);
-	f32 max_y = max(max(p0.y, p1.y), p2.y);
+    instance->p0 = bbox.v0;
+    instance->p1 = bbox.v1;
     
-	rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness * 5.0f);
+    instance->softness = softness;
+    instance->thickness = thickness;
+    instance->params_0 = start_angle;
+    instance->params_1 = end_angle;
     
-	vec2_t c = rect_center(bbox);
-	vec2_t c_p0 = vec2_sub(p0, c);
-	vec2_t c_p1 = vec2_sub(p1, c);
-	vec2_t c_p2 = vec2_sub(p2, c);
+    instance->shape_index = ui_r_shape_ring;
+    instance->clip_mask_index = ui_r_get_clip_mask_index(ui_r_top_clip_mask());
+    instance->texture_index = -1;
     
-	instance->bbox = bbox;
+    instance->color_index_0 = ui_r_get_color_index(ui_r_top_color0());
+    instance->color_index_1 = ui_r_get_color_index(ui_r_top_color1());
+    instance->color_index_2 = ui_r_get_color_index(ui_r_top_color2());
+    instance->color_index_3 = ui_r_get_color_index(ui_r_top_color3());
     
-	instance->color0 = ui_r_top_color0();
-	instance->color1 = ui_r_top_color1();
-	instance->color2 = ui_r_top_color2();
+    ui_r_auto_pop_stacks();
     
-	instance->point0 = c_p0;
-	instance->point1 = c_p1;
-	instance->point2 = c_p2;
+    return instance;
+} 
+
+function ui_r_instance_t*
+ui_r_draw_tri(vec2_t p0, vec2_t p1, vec2_t p2, f32 thickness, f32 softness) {
     
-	instance->radii = ui_r_top_rounding();
+    ui_r_instance_t* instance = ui_r_get_instance();
     
-	instance->thickness = ui_r_top_thickness();
-	instance->softness = softness;
+    f32 min_x = min(min(p0.x, p1.x), p2.x);
+    f32 min_y = min(min(p0.y, p1.y), p2.y);
+    f32 max_x = max(max(p0.x, p1.x), p2.x);
+    f32 max_y = max(max(p0.y, p1.y), p2.y);
+    rect_t bbox = rect_grow(rect(min_x, min_y, max_x, max_y), softness * 5.0f);
     
-	instance->indices = ui_r_pack_indices(ui_r_shape_tri,
-                                          ui_r_get_texture_index(ui_r_top_texture()),
-                                          ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+    vec2_t c = rect_center(bbox);
+    vec2_t c_p0 = vec2_sub(p0, c);
+    vec2_t c_p1 = vec2_sub(p1, c);
+    vec2_t c_p2 = vec2_sub(p2, c);
     
+    instance->p0 = bbox.v0;
+    instance->p1 = bbox.v1;
     
-	ui_r_auto_pop_stacks();
+    instance->softness = softness;
+    instance->thickness = thickness;
+    
+    instance->params_0 = c_p0.x;
+    instance->params_1 = c_p0.y;
+    instance->params_2 = c_p1.x;
+    instance->params_3 = c_p1.y;
+    instance->params_4 = c_p2.x;
+    instance->params_5 = c_p2.y;
+    
+    instance->shape_index = ui_r_shape_tri;
+    instance->clip_mask_index = ui_r_get_clip_mask_index(ui_r_top_clip_mask());
+    instance->texture_index = -1;
+    
+    instance->color_index_0 = ui_r_get_color_index(ui_r_top_color0());
+    instance->color_index_1 = ui_r_get_color_index(ui_r_top_color1());
+    instance->color_index_2 = ui_r_get_color_index(ui_r_top_color2());
+    
+    ui_r_auto_pop_stacks();
+    
+    return instance;
 }
 
 function void
-ui_r_draw_text(str_t text, vec2_t pos) {
+ui_r_draw_text(str_t text, vec2_t pos, font_handle_t font, f32 font_size) {
     
-	f32 font_size = ui_r_top_font_size();
-	font_handle_t font = ui_r_top_font();
+    u32 texture_index = ui_r_get_texture_index(font_state.atlas_texture);
+    u32 clip_index = ui_r_get_clip_mask_index(ui_r_top_clip_mask());
     
-	for (u32 i = 0; i < text.size; i++) {
+    for (u32 i = 0; i < text.size; i++) {
         
-		ui_r_instance_t* instance = ui_r_get_instance();
-		
-		u8 codepoint = *(text.data + i);
-		font_glyph_t* glyph = font_get_glyph(font, font_size, codepoint);
+        ui_r_instance_t* instance = ui_r_get_instance();
         
-		instance->bbox = rect(pos.x, pos.y, pos.x + glyph->pos.x1, pos.y + glyph->pos.y1);
-		instance->tex = glyph->uv;
+        u8 codepoint = *(text.data + i);
+        font_glyph_t* glyph = font_get_glyph(font, font_size, codepoint);
         
-		instance->color0 = ui_r_top_color0();
-		instance->color1 = ui_r_top_color1();
-		instance->color2 = ui_r_top_color2();
-		instance->color3 = ui_r_top_color3();
+        rect_t bbox = rect(pos.x, pos.y, pos.x + glyph->pos.x1, pos.y + glyph->pos.y1);
         
-		instance->indices = ui_r_pack_indices(ui_r_shape_rect,
-                                              ui_r_get_texture_index(font_state.atlas_texture),
-                                              ui_r_get_clip_mask_index(ui_r_top_clip_mask()));
+        instance->p0 = bbox.v0;
+        instance->p1 = bbox.v1;
+        instance->uv0= glyph->uv.v0;
+        instance->uv1= glyph->uv.v1;
         
-		pos.x += glyph->advance;
-	}
+        instance->shape_index = ui_r_shape_rect;
+        instance->clip_mask_index = clip_index;
+        instance->texture_index = texture_index;
+        
+        instance->color_index_0 = ui_r_get_color_index(ui_r_top_color0());
+        instance->color_index_1 = ui_r_get_color_index(ui_r_top_color1());
+        instance->color_index_2 = ui_r_get_color_index(ui_r_top_color2());
+        instance->color_index_3 = ui_r_get_color_index(ui_r_top_color3());
+        
+        pos.x += glyph->advance;
+    }
     
-	ui_r_auto_pop_stacks();
+    ui_r_auto_pop_stacks();
 }
-
 
 
 //- stack functions 
 
 function void 
 ui_auto_pop_stacks() {
+    
 #define ui_stack(name, type) if (ui_active_context->name##_stack.auto_pop) { ui_pop_##name(); ui_active_context->name##_stack.auto_pop = false; };
     ui_stack_list
 #undef ui_stack
+    
 }
 
 #define ui_stack_top_impl(name, type)\
@@ -2327,53 +2686,88 @@ ui_top_tags_key() {
 
 function str_t ui_top_tag() { ui_stack_top_impl(tag, str_t) }
 
-// tags
-
-function str_t 
-ui_push_tag(str_t v) {
+function void 
+ui__push_tag_string(str_t v) {
     
-    // get seed key
+    //get top tag key
     ui_key_t seed_key = { 0 };
     if (ui_active_context->tags_stack_top != nullptr) {
         seed_key = ui_active_context->tags_stack_top->key;
     }
     
-    // create key
+    //get new key
     ui_key_t key = seed_key;
     if (v.size > 0) {
         key = ui_key_from_string(seed_key, v);
     }
     
-    // get or allocate stack node
+    //push this key onto the stack
     ui_tags_stack_node_t* tags_stack_node = ui_active_context->tags_stack_free;
     if (tags_stack_node != nullptr) {
         stack_pop(ui_active_context->tags_stack_free);
     } else {
         tags_stack_node = (ui_tags_stack_node_t*)arena_alloc(ui_build_arena(), sizeof(ui_tags_stack_node_t)); 
     }
+    memset(tags_stack_node, 0, sizeof(ui_tags_stack_node_t));
+    
     stack_push(ui_active_context->tags_stack_top, tags_stack_node);
     tags_stack_node->key = key;
     
-    // store tag in cache
+    //try to find tag in cache first
     u32 index = key.data[0] % ui_active_context->tags_hash_list_count;
-    ui_tags_hash_list_t* hash_list = &ui_active_context->tags_hash_list[index];
-    
-    // try to find tag in cache first
-    ui_tags_node_t* tag_node = nullptr;
-    for (ui_tags_node_t* n = hash_list->first; n != nullptr; n = n->next) {
+    ui_tags_cache_hash_list_t* hash_list = &ui_active_context->tags_hash_list[index];
+    ui_tags_cache_node_t* tag_node = nullptr;
+    for (ui_tags_cache_node_t* n = hash_list->first; n != nullptr; n = n->next) {
         if (ui_key_equals(n->key, key)) {
             tag_node = n;
             break;
         }
     }
     
-    // create if we didn't find one
     if (tag_node == nullptr) {
-        tag_node = (ui_tags_node_t*)arena_alloc(ui_build_arena(), sizeof(ui_tags_node_t));
+        temp_t scratch = scratch_begin();
+        
+        str_list_t tags = { 0 };
+        
+        // create string list
+        if (v.size != 0) {
+            str_list_push(scratch.arena, &tags, str_copy(ui_build_arena(), v));
+        }
+        
+        // add strings to tag str list
+        for (ui_tag_node_t* n = ui_active_context->tag_stack.top; n != nullptr; n = n->next) {
+            if (n->v.size != 0) {
+                str_list_push(scratch.arena, &tags, str_copy(ui_build_arena(), n->v));
+            }
+        }
+        
+        // create tag node
+        tag_node = (ui_tags_cache_node_t*)arena_calloc(ui_build_arena(), sizeof(ui_tags_cache_node_t));
         stack_push(hash_list->first, tag_node);
         tag_node->key = key;
+        tag_node->tags = str_array_from_list(ui_build_arena(), &tags);
+        tag_node->tag_count = tags.count;
+        
+        scratch_end(scratch);
     }
     
+}
+
+function void
+ui__pop_tags_key() {
+    if (ui_active_context->tags_stack_top != nullptr) {
+        ui_tags_stack_node_t* popped = ui_active_context->tags_stack_top;
+        stack_pop(ui_active_context->tags_stack_top);
+        stack_push(ui_active_context->tags_stack_free, popped);
+    }
+}
+
+
+// tags
+
+function str_t 
+ui_push_tag(str_t v) {
+    ui__push_tag_string(v);
     ui_stack_push_impl(tag, str_t)
 }
 
@@ -2392,59 +2786,13 @@ ui_push_tagf(char* fmt, ...) {
 
 function str_t 
 ui_pop_tag() {
-    if(ui_active_context->tags_stack_top != nullptr) {
-        ui_tags_stack_node_t* popped = ui_active_context->tags_stack_top;
-        stack_pop(ui_active_context->tags_stack_top);
-        stack_push(ui_active_context->tags_stack_free, popped);
-    }
+    ui__pop_tags_key();
     ui_stack_pop_impl(tag, str_t, { 0 })
 }
 
 function str_t 
 ui_set_next_tag(str_t v) {
-    
-    // get seed key
-    ui_key_t seed_key = { 0 };
-    if (ui_active_context->tags_stack_top != nullptr) {
-        seed_key = ui_active_context->tags_stack_top->key;
-    }
-    
-    // create key
-    ui_key_t key = seed_key;
-    if (v.size > 0) {
-        key = ui_key_from_string(seed_key, v);
-    }
-    
-    // get or allocate stack node
-    ui_tags_stack_node_t* tags_stack_node = ui_active_context->tags_stack_free;
-    if (tags_stack_node != nullptr) {
-        stack_pop(ui_active_context->tags_stack_free);
-    } else {
-        tags_stack_node = (ui_tags_stack_node_t*)arena_alloc(ui_build_arena(), sizeof(ui_tags_stack_node_t)); 
-    }
-    stack_push(ui_active_context->tags_stack_top, tags_stack_node);
-    tags_stack_node->key = key;
-    
-    // store tag in cache
-    u32 index = key.data[0] % ui_active_context->tags_hash_list_count;
-    ui_tags_hash_list_t* hash_list = &ui_active_context->tags_hash_list[index];
-    
-    // try to find tag in cache first
-    ui_tags_node_t* tag_node = nullptr;
-    for (ui_tags_node_t* n = hash_list->first; n != nullptr; n = n->next) {
-        if (ui_key_equals(n->key, key)) {
-            tag_node = n;
-            break;
-        }
-    }
-    
-    // create if we didn't find one
-    if (tag_node == nullptr) {
-        tag_node = (ui_tags_node_t*)arena_alloc(ui_build_arena(), sizeof(ui_tags_node_t));
-        stack_push(hash_list->first, tag_node);
-        tag_node->key = key;
-    }
-    
+    ui__push_tag_string(v);
     ui_stack_set_next_impl(tag, str_t)
 }
 
@@ -2587,7 +2935,6 @@ ui_set_next_padding(f32 padding) {
 
 //- renderer stacks
 
-
 function void 
 ui_r_auto_pop_stacks() {
 #define ui_r_stack(name, type) if (ui_active_context->name##_r_stack.auto_pop) { ui_r_pop_##name(); ui_active_context->name##_r_stack.auto_pop = false; };
@@ -2636,6 +2983,11 @@ stack_push(ui_active_context->name##_r_stack.top, node);\
 ui_active_context->name##_r_stack.auto_pop = true;\
 return old_value;
 
+function rect_t ui_r_top_clip_mask() { ui_r_stack_top_impl(clip_mask, rect_t) }
+function rect_t ui_r_push_clip_mask(rect_t v) { ui_r_stack_push_impl(clip_mask, rect_t) }
+function rect_t ui_r_pop_clip_mask() { ui_r_stack_pop_impl(clip_mask, rect_t, { 0 }) }
+function rect_t ui_r_set_next_clip_mask(rect_t v) { ui_r_stack_set_next_impl(clip_mask, rect_t) }
+
 function color_t ui_r_top_color0() { ui_r_stack_top_impl(color0, color_t) }
 function color_t ui_r_push_color0(color_t v) { ui_r_stack_push_impl(color0, color_t) }
 function color_t ui_r_pop_color0() { ui_r_stack_pop_impl(color0, color_t, { 0 }) }
@@ -2656,131 +3008,31 @@ function color_t ui_r_push_color3(color_t v) { ui_r_stack_push_impl(color3, colo
 function color_t ui_r_pop_color3() { ui_r_stack_pop_impl(color3, color_t, { 0 }) }
 function color_t ui_r_set_next_color3(color_t v) { ui_r_stack_set_next_impl(color3, color_t) }
 
-function f32 ui_r_top_radius0() { ui_r_stack_top_impl(radius0, f32) }
-function f32 ui_r_push_radius0(f32 v) { ui_r_stack_push_impl(radius0, f32) }
-function f32 ui_r_pop_radius0() { ui_r_stack_pop_impl(radius0, f32, 0.0f) }
-function f32 ui_r_set_next_radius0(f32 v) { ui_r_stack_set_next_impl(radius0, f32) }
-
-function f32 ui_r_top_radius1() { ui_r_stack_top_impl(radius1, f32) }
-function f32 ui_r_push_radius1(f32 v) { ui_r_stack_push_impl(radius1, f32) }
-function f32 ui_r_pop_radius1() { ui_r_stack_pop_impl(radius1, f32, 0.0f) }
-function f32 ui_r_set_next_radius1(f32 v) { ui_r_stack_set_next_impl(radius1, f32) }
-
-function f32 ui_r_top_radius2() { ui_r_stack_top_impl(radius2, f32) }
-function f32 ui_r_push_radius2(f32 v) { ui_r_stack_push_impl(radius2, f32) }
-function f32 ui_r_pop_radius2() { ui_r_stack_pop_impl(radius2, f32, 0.0f) }
-function f32 ui_r_set_next_radius2(f32 v) { ui_r_stack_set_next_impl(radius2, f32) }
-
-function f32 ui_r_top_radius3() { ui_r_stack_top_impl(radius3, f32) }
-function f32 ui_r_push_radius3(f32 v) { ui_r_stack_push_impl(radius3, f32) }
-function f32 ui_r_pop_radius3() { ui_r_stack_pop_impl(radius3, f32, 0.0f) }
-function f32 ui_r_set_next_radius3(f32 v) { ui_r_stack_set_next_impl(radius3, f32) }
-
-function f32 ui_r_top_thickness() { ui_r_stack_top_impl(thickness, f32) }
-function f32 ui_r_push_thickness(f32 v) { ui_r_stack_push_impl(thickness, f32) }
-function f32 ui_r_pop_thickness() { ui_r_stack_pop_impl(thickness, f32, 0.0f) }
-function f32 ui_r_set_next_thickness(f32 v) { ui_r_stack_set_next_impl(thickness, f32) }
-
-function f32 ui_r_top_softness() { ui_r_stack_top_impl(softness, f32) }
-function f32 ui_r_push_softness(f32 v) { ui_r_stack_push_impl(softness, f32) }
-function f32 ui_r_pop_softness() { ui_r_stack_pop_impl(softness, f32, 0.0f) }
-function f32 ui_r_set_next_softness(f32 v) { ui_r_stack_set_next_impl(softness, f32) }
-
-function font_handle_t ui_r_top_font() { ui_r_stack_top_impl(font, font_handle_t) }
-function font_handle_t ui_r_push_font(font_handle_t v) { ui_r_stack_push_impl(font, font_handle_t) }
-function font_handle_t ui_r_pop_font() { ui_r_stack_pop_impl(font, font_handle_t, { 0 }) }
-function font_handle_t ui_r_set_next_font(font_handle_t v) { ui_r_stack_set_next_impl(font, font_handle_t) }
-
-function f32 ui_r_top_font_size() { ui_r_stack_top_impl(font_size, f32) }
-function f32 ui_r_push_font_size(f32 v) { ui_r_stack_push_impl(font_size, f32) }
-function f32 ui_r_pop_font_size() { ui_r_stack_pop_impl(font_size, f32, 12.0f) }
-function f32 ui_r_set_next_font_size(f32 v) { ui_r_stack_set_next_impl(font_size, f32) }
-
-function rect_t ui_r_top_clip_mask() { ui_r_stack_top_impl(clip_mask, rect_t) }
-function rect_t ui_r_push_clip_mask(rect_t v) { ui_r_stack_push_impl(clip_mask, rect_t) }
-function rect_t ui_r_pop_clip_mask() { ui_r_stack_pop_impl(clip_mask, rect_t, { 0 }) }
-function rect_t ui_r_set_next_clip_mask(rect_t v) { ui_r_stack_set_next_impl(clip_mask, rect_t) }
-
-function gfx_handle_t ui_r_top_texture() { ui_r_stack_top_impl(texture, gfx_handle_t) }
-function gfx_handle_t ui_r_push_texture(gfx_handle_t v) { ui_r_stack_push_impl(texture, gfx_handle_t) }
-function gfx_handle_t ui_r_pop_texture() { ui_r_stack_pop_impl(texture, gfx_handle_t, { 0 }) }
-function gfx_handle_t ui_r_set_next_texture(gfx_handle_t v) { ui_r_stack_set_next_impl(texture, gfx_handle_t) }
-
 // group stacks
 
 // colors
 function void
 ui_r_push_color(color_t color) {
-	ui_r_push_color0(color);
-	ui_r_push_color1(color);
-	ui_r_push_color2(color);
-	ui_r_push_color3(color);
+    ui_r_push_color0(color);
+    ui_r_push_color1(color);
+    ui_r_push_color2(color);
+    ui_r_push_color3(color);
 }
 
 function void
 ui_r_set_next_color(color_t color) {
-	ui_r_set_next_color0(color);
-	ui_r_set_next_color1(color);
-	ui_r_set_next_color2(color);
-	ui_r_set_next_color3(color);
+    ui_r_set_next_color0(color);
+    ui_r_set_next_color1(color);
+    ui_r_set_next_color2(color);
+    ui_r_set_next_color3(color);
 }
 
 function void
 ui_r_pop_color() {
-	ui_r_pop_color0();
-	ui_r_pop_color1();
-	ui_r_pop_color2();
-	ui_r_pop_color3();
-}
-
-// rounding
-function vec4_t 
-ui_r_top_rounding() {
-	f32 x = ui_r_top_radius0();
-	f32 y = ui_r_top_radius1();
-	f32 z = ui_r_top_radius2();
-	f32 w = ui_r_top_radius3();
-	return vec4(x, y, z, w);
-}
-
-function void
-ui_r_push_rounding(f32 radius) {
-	ui_r_push_radius0(radius);
-	ui_r_push_radius1(radius);
-	ui_r_push_radius2(radius);
-	ui_r_push_radius3(radius);
-}
-
-function void
-ui_r_push_rounding(vec4_t radii) {
-	ui_r_push_radius0(radii.x);
-	ui_r_push_radius1(radii.y);
-	ui_r_push_radius2(radii.z);
-	ui_r_push_radius3(radii.w);
-}
-
-function void
-ui_r_set_next_rounding(f32 radius) {
-	ui_r_set_next_radius0(radius);
-	ui_r_set_next_radius1(radius);
-	ui_r_set_next_radius2(radius);
-	ui_r_set_next_radius3(radius);
-}
-
-function void
-ui_r_set_next_rounding(vec4_t radii) {
-	ui_r_set_next_radius0(radii.x);
-	ui_r_set_next_radius1(radii.y);
-	ui_r_set_next_radius2(radii.z);
-	ui_r_set_next_radius3(radii.w);
-}
-
-function void
-ui_r_pop_rounding() {
-	ui_r_pop_radius0();
-	ui_r_pop_radius1();
-	ui_r_pop_radius2();
-	ui_r_pop_radius3();
+    ui_r_pop_color0();
+    ui_r_pop_color1();
+    ui_r_pop_color2();
+    ui_r_pop_color3();
 }
 
 #endif // SORA_UI_CORE_CPP

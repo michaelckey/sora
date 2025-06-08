@@ -82,11 +82,22 @@ struct gfx_d3d11_resource_t {
 	};
 };
 
-// renderer
+struct gfx_profile_node_t {
+    gfx_profile_node_t* next;
+    
+    str_t name;
+    f64 dt;
+};
 
-struct gfx_d3d11_renderer_t {
-	gfx_d3d11_renderer_t* next;
-	gfx_d3d11_renderer_t* prev;
+struct gpu_profile_entry_t {
+    
+};
+
+// context
+
+struct gfx_d3d11_context_t {
+	gfx_d3d11_context_t* next;
+	gfx_d3d11_context_t* prev;
     
 	os_handle_t window;
 	uvec2_t resolution;
@@ -94,6 +105,17 @@ struct gfx_d3d11_renderer_t {
 	IDXGISwapChain1* swapchain;
 	ID3D11Texture2D* framebuffer;
 	ID3D11RenderTargetView* framebuffer_rtv;
+    
+    // queries
+    ID3D11Query* disjoint_query;
+    ID3D11Query* start_query;
+    ID3D11Query* end_query;
+    
+    f64 delta_time;
+    
+    gfx_profile_node_t* profile_top;
+    gfx_profile_node_t* profile_free;
+    
 };
 
 // state
@@ -108,11 +130,11 @@ struct gfx_d3d11_state_t {
 	gfx_d3d11_resource_t* resource_last;
 	gfx_d3d11_resource_t* resource_free;
 	
-	// renderer
-	gfx_d3d11_renderer_t* renderer_first;
-	gfx_d3d11_renderer_t* renderer_last;
-	gfx_d3d11_renderer_t* renderer_free;
-	gfx_d3d11_renderer_t* renderer_active;
+	// context
+	gfx_d3d11_context_t* context_first;
+	gfx_d3d11_context_t* context_last;
+	gfx_d3d11_context_t* context_free;
+	gfx_d3d11_context_t* context_active;
     
 	// d3d11
 	ID3D11Device* device;

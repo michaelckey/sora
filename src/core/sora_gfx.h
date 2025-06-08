@@ -162,7 +162,6 @@ enum {
 	gfx_camera_mode_orbit = gfx_camera_mode_disable_roll | gfx_camera_mode_clamp_pitch
 };
 
-
 //- typedefs 
 
 struct gfx_handle_t;
@@ -222,184 +221,196 @@ struct gfx_pipeline_t {
 	rect_t scissor;
 };
 
+
 // forward declare
-struct gfx_render_port_t;
-struct gfx_render_connection_t;
-struct gfx_render_pass_t;
-struct gfx_render_graph_t;
-
+//struct gfx_render_port_t;
+//struct gfx_render_connection_t;
+//struct gfx_render_pass_t;
+//struct gfx_render_graph_t;
+//
 // ports
-struct gfx_render_port_t {
-    gfx_render_port_t* next;
-    gfx_render_port_t* prev;
-    
-    str_t label;
-    gfx_render_pass_t* pass;
-    gfx_render_port_t* connected_port;
-    gfx_handle_t resource;
-};
-
-struct gfx_render_port_list_t {
-    gfx_render_port_t* first;
-    gfx_render_port_t* last;
-};
-
+//struct gfx_render_port_t {
+//gfx_render_port_t* next;
+//gfx_render_port_t* prev;
+//
+//str_t label;
+//gfx_render_pass_t* pass;
+//gfx_render_port_t* connected_port;
+//gfx_handle_t resource;
+//};
+//
+//struct gfx_render_port_list_t {
+//gfx_render_port_t* first;
+//gfx_render_port_t* last;
+//};
+//
 // connections
-struct gfx_render_connection_t {
-    
-    // global list
-    gfx_render_connection_t* next;
-    gfx_render_connection_t* prev;
-    
-    // ports
-    gfx_render_port_t* from;
-    gfx_render_port_t* to;
-    
-};
-
+//struct gfx_render_connection_t {
+//
+// global list
+//gfx_render_connection_t* next;
+//gfx_render_connection_t* prev;
+//
+// ports
+//gfx_render_port_t* from;
+//gfx_render_port_t* to;
+//
+//};
+//
 // render pass
-struct gfx_render_pass_t {
-    gfx_render_graph_t* graph;
-    
-    // global list
-    gfx_render_pass_t* next;
-    gfx_render_pass_t* prev;
-    
-    // execute list
-    gfx_render_pass_t* execute_next;
-    gfx_render_pass_t* execute_prev;
-    
-    // funcs
-    gfx_render_pass_init_func* init_func;
-    gfx_render_pass_execute_func* execute_func;
-    
-    // ports
-    gfx_render_port_list_t inputs;
-    gfx_render_port_list_t outputs;
-    
-    // topological sort
-    u32 in_degree;
-};
-
-struct gfx_render_pass_ts_queue_t {
-    gfx_render_pass_ts_queue_t* next;
-    gfx_render_pass_ts_queue_t* prev;
-    gfx_render_pass_t* pass;
-};
-
+//struct gfx_render_pass_t {
+//gfx_render_graph_t* graph;
+//
+// global list
+//gfx_render_pass_t* next;
+//gfx_render_pass_t* prev;
+//
+// execute list
+//gfx_render_pass_t* execute_next;
+//gfx_render_pass_t* execute_prev;
+//
+// funcs
+//gfx_render_pass_init_func* init_func;
+//gfx_render_pass_execute_func* execute_func;
+//
+// ports
+//gfx_render_port_list_t inputs;
+//gfx_render_port_list_t outputs;
+//
+// topological sort
+//u32 in_degree;
+//};
+//
+//struct gfx_render_pass_ts_queue_t {
+//gfx_render_pass_ts_queue_t* next;
+//gfx_render_pass_ts_queue_t* prev;
+//gfx_render_pass_t* pass;
+//};
+//
 // render graph
-struct gfx_render_graph_t {
-    
-    // arenas
-    arena_t* arena;
-    
-    // handles
-    gfx_handle_t renderer;
-    
-    // passes
-    gfx_render_pass_t* pass_first;
-    gfx_render_pass_t* pass_last;
-    gfx_render_pass_t* pass_free;
-    
-    // execute list
-    gfx_render_pass_t* execute_first;
-    gfx_render_pass_t* execute_last;
-    
-    // ports
-    gfx_render_port_t* port_free;
-    
-    // connections
-    gfx_render_connection_t* connection_first;
-    gfx_render_connection_t* connection_last;
-    gfx_render_connection_t* connection_free;
-    
-};
-
+//struct gfx_render_graph_t {
+//
+// arenas
+//arena_t* arena;
+//
+// handles
+//gfx_handle_t renderer;
+//
+// passes
+//gfx_render_pass_t* pass_first;
+//gfx_render_pass_t* pass_last;
+//gfx_render_pass_t* pass_free;
+//
+// execute list
+//gfx_render_pass_t* execute_first;
+//gfx_render_pass_t* execute_last;
+//
+// ports
+//gfx_render_port_t* port_free;
+//
+// connections
+//gfx_render_connection_t* connection_first;
+//gfx_render_connection_t* connection_last;
+//gfx_render_connection_t* connection_free;
+//
+//};
+//
 // mesh
-
-struct gfx_face_index_t {
-    i32 position_index;
-    i32 texcoord_index;
-    i32 normal_index;
-};
-
-struct gfx_face_t {
-    gfx_face_index_t indices[4];
-    u32 index_count;
-};
-
-struct gfx_vertex_lookup_t {
-    i32 position_index;
-    i32 texcoord_index;
-    i32 normal_index;
-    i32 new_index;
-};
-
-struct gfx_vertex_t {
-    vec3_t position;
-    vec3_t normal;
-    vec3_t tangent;
-    vec2_t texcoord;
-    vec4_t color;
-};
-
-struct gfx_mesh_t {
-    gfx_vertex_t* vertices;
-    u32 vertex_count;
-    
-    i32* indices;
-    u32 index_count;
-};
-
-struct gfx_mesh_file_header_t {
-    u32 magic;
-    u32 version;
-    u32 vertex_count;
-    u32 index_count;
-    u32 flags;
-};
-
+//
+//struct gfx_face_index_t {
+//i32 position_index;
+//i32 texcoord_index;
+//i32 normal_index;
+//};
+//
+//struct gfx_face_t {
+//gfx_face_index_t indices[4];
+//u32 index_count;
+//};
+//
+//struct gfx_mesh_object_t {
+//u32 position_offset;
+//u32 position_count;
+//u32 texcoord_offset;
+//u32 texcoord_count;
+//u32 normal_offset;
+//u32 normal_count;
+//u32 face_index;
+//u32 face_count;
+//};
+//
+//struct gfx_vertex_lookup_t {
+//i32 position_index;
+//i32 texcoord_index;
+//i32 normal_index;
+//i32 new_index;
+//};
+//
+//struct gfx_vertex_t {
+//vec3_t position;
+//vec3_t normal;
+//vec3_t tangent;
+//vec2_t texcoord;
+//vec4_t color;
+//};
+//
+//struct gfx_mesh_t {
+//gfx_vertex_t* vertices;
+//u32 vertex_count;
+//
+//i32* indices;
+//u32 index_count;
+//};
+//
+//struct gfx_mesh_file_header_t {
+//u32 magic;
+//u32 version;
+//u32 vertex_count;
+//u32 index_count;
+//u32 flags;
+//};
+//
 // camera
-
-struct gfx_camera_constants_t {
-    mat4_t view_projection;
-    mat4_t view;
-    mat4_t projection;
-    mat4_t inv_view;
-    mat4_t inv_projection;
-    vec3_t camera_position;
-};
-
-struct gfx_camera_t {
-    
-    gfx_camera_mode mode;
-    gfx_camera_constants_t constants;
-    
-    vec3_t target_position;
-    vec3_t position;
-    
-    f32 target_distance;
-    f32 distance;
-    
-    quat_t target_orientation;
-    quat_t orientation;
-    
-    vec3_t translational_input;
-    vec3_t rotational_input;
-    
-    f32 speed;
-    f32 target_speed;
-    f32 target_fov;
-    f32 fov;
-    f32 z_near;
-    f32 z_far;
-    f32 min_pitch;
-    f32 max_pitch;
-    f32 min_yaw;
-    f32 max_yaw;
-    f32 min_roll;
-    f32 max_roll;
-};
+//
+//struct gfx_camera_constants_t {
+//mat4_t view_projection;
+//mat4_t view;
+//mat4_t projection;
+//mat4_t inv_view;
+//mat4_t inv_projection;
+//vec3_t camera_position;
+//};
+//
+//struct gfx_camera_t {
+//
+//gfx_camera_mode mode;
+//gfx_camera_constants_t constants;
+//
+//vec3_t target_position;
+//vec3_t position;
+//
+//f32 target_distance;
+//f32 distance;
+//
+//quat_t target_orientation;
+//quat_t orientation;
+//
+//vec3_t translational_input;
+//vec3_t rotational_input;
+//
+//f32 speed;
+//f32 target_speed;
+//f32 target_fov;
+//f32 fov;
+//f32 z_near;
+//f32 z_far;
+//f32 min_pitch;
+//f32 max_pitch;
+//f32 min_yaw;
+//f32 max_yaw;
+//f32 min_roll;
+//f32 max_roll;
+//};
 
 //~ functions 
 
@@ -418,15 +429,15 @@ function b8 gfx_texture_format_is_depth(gfx_texture_format format);
 function void gfx_init();
 function void gfx_release();
 
-// renderer (implemented per backend)
-function gfx_handle_t gfx_renderer_create(os_handle_t window);
-function void gfx_renderer_release(gfx_handle_t renderer);
-function void gfx_renderer_set_size(gfx_handle_t renderer, uvec2_t size);
-function uvec2_t gfx_renderer_get_size(gfx_handle_t renderer);
-function void gfx_renderer_update(gfx_handle_t renderer);
-function void gfx_renderer_resize(gfx_handle_t renderer, uvec2_t size);
-function void gfx_renderer_clear(gfx_handle_t renderer, color_t clear_color);
-function void gfx_renderer_present(gfx_handle_t renderer);
+// context (implemented per backend)
+function gfx_handle_t gfx_context_create(os_handle_t window);
+function void gfx_context_release(gfx_handle_t context);
+function void gfx_context_set_size(gfx_handle_t context, uvec2_t size);
+function uvec2_t gfx_context_get_size(gfx_handle_t context);
+function void gfx_context_update(gfx_handle_t context);
+function void gfx_context_resize(gfx_handle_t context, uvec2_t size);
+function void gfx_context_clear(gfx_handle_t context, color_t clear_color);
+function void gfx_context_present(gfx_handle_t context);
 
 // resources (implemented once)
 
@@ -437,50 +448,52 @@ function gfx_handle_t gfx_texture_load(str_t filepath, gfx_texture_flags flags =
 function gfx_handle_t gfx_shader_load(str_t filepath, gfx_shader_flags flags = 0);
 
 // mesh
-function gfx_handle_t gfx_mesh_load(arena_t* arena, str_t filepath);
-function u32 gfx_mesh_get_vertex_count(gfx_handle_t mesh);
-function u32 gfx_mesh_get_index_count(gfx_handle_t mesh);
-function gfx_vertex_t* gfx_mesh_get_vertices(gfx_handle_t mesh);
-function i32* gfx_mesh_get_indices(gfx_handle_t mesh);
-
+//function gfx_handle_t gfx_mesh_load(arena_t* arena, str_t filepath);
+//function u32 gfx_mesh_get_vertex_count(gfx_handle_t mesh);
+//function u32 gfx_mesh_get_index_count(gfx_handle_t mesh);
+//function gfx_vertex_t* gfx_mesh_get_vertices(gfx_handle_t mesh);
+//function i32* gfx_mesh_get_indices(gfx_handle_t mesh);
+//
 // camera
-function gfx_handle_t gfx_camera_create(arena_t* arena, gfx_camera_mode mode, f32 fov, f32 z_near, f32 z_far);
-function void gfx_camera_free_mode_input(gfx_handle_t camera, os_handle_t window);
-function void gfx_camera_update(gfx_handle_t camera, rect_t viewport, f32 dt);
-function gfx_camera_constants_t* gfx_camera_get_constants(gfx_handle_t camera);
-function mat4_t gfx_camera_get_view(gfx_handle_t camera);
-function mat4_t gfx_camera_get_projection(gfx_handle_t camera);
-
+//function gfx_handle_t gfx_camera_create(arena_t* arena, gfx_camera_mode mode, f32 fov, f32 z_near, f32 z_far);
+//function void gfx_camera_free_mode_input(gfx_handle_t camera, os_handle_t window);
+//function void gfx_camera_update(gfx_handle_t camera, rect_t viewport, f32 dt);
+//function gfx_camera_constants_t* gfx_camera_get_constants(gfx_handle_t camera);
+//function mat4_t gfx_camera_get_view(gfx_handle_t camera);
+//function mat4_t gfx_camera_get_projection(gfx_handle_t camera);
+//
 // render graphs (implemented once)
-function gfx_handle_t gfx_render_graph_create(gfx_handle_t renderer);
-function void gfx_render_graph_release(gfx_handle_t render_graph);
-function void gfx_render_graph_compile(gfx_handle_t render_graph);
-function void gfx_render_graph_execute(gfx_handle_t render_graph);
-
+//function gfx_handle_t gfx_render_graph_create(gfx_handle_t renderer);
+//function void gfx_render_graph_release(gfx_handle_t render_graph);
+//function void gfx_render_graph_compile(gfx_handle_t render_graph);
+//function void gfx_render_graph_execute(gfx_handle_t render_graph);
+//
 // render passes (implemented once)
-function gfx_handle_t gfx_render_pass_create(gfx_handle_t render_graph, gfx_render_pass_init_func init_func, gfx_render_pass_execute_func execute_func);
-function void gfx_render_pass_release(gfx_handle_t render_pass);
-function void gfx_render_pass_add_input(gfx_handle_t render_pass, str_t label);
-function void gfx_render_pass_add_output(gfx_handle_t render_pass, str_t label);
-function void gfx_render_pass_link(gfx_handle_t src, str_t output_label, gfx_handle_t dst, str_t input_label);
-function void gfx_render_pass_unlink(gfx_handle_t src, str_t output_label, gfx_handle_t dst, str_t input_label);
-function void gfx_render_pass_set_output(gfx_handle_t render_pass, str_t output_label, gfx_handle_t resource);
-function gfx_handle_t gfx_render_pass_get_input(gfx_handle_t render_pass, str_t input_label);
-function gfx_handle_t gfx_render_pass_get_output(gfx_handle_t render_pass, str_t output_label);
+//function gfx_handle_t gfx_render_pass_create(gfx_handle_t render_graph, gfx_render_pass_init_func init_func, gfx_render_pass_execute_func execute_func);
+//function void gfx_render_pass_release(gfx_handle_t render_pass);
+//function void gfx_render_pass_add_input(gfx_handle_t render_pass, str_t label);
+//function void gfx_render_pass_add_output(gfx_handle_t render_pass, str_t label);
+//function void gfx_render_pass_link(gfx_handle_t src, str_t output_label, gfx_handle_t dst, str_t input_label);
+//function void gfx_render_pass_unlink(gfx_handle_t src, str_t output_label, gfx_handle_t dst, str_t input_label);
+//function void gfx_render_pass_set_output(gfx_handle_t render_pass, str_t output_label, gfx_handle_t resource);
+//function gfx_handle_t gfx_render_pass_get_input(gfx_handle_t render_pass, str_t input_label);
+//function gfx_handle_t gfx_render_pass_get_output(gfx_handle_t render_pass, str_t output_label);
 
 // internal (implemented once)
 
 // render graph internal
-function gfx_render_port_t* _gfx_render_port_alloc(gfx_render_graph_t* render_graph);
-function gfx_render_port_t* _gfx_render_port_find(gfx_render_port_list_t list, str_t label);
-function gfx_render_connection_t* _gfx_render_connection_alloc(gfx_render_graph_t* render_graph);
-function gfx_render_connection_t* _gfx_render_connection_find(gfx_render_graph_t* render_graph, gfx_render_port_t* from, gfx_render_port_t* to);
-
+//function gfx_render_port_t* _gfx_render_port_alloc(gfx_render_graph_t* render_graph);
+//function gfx_render_port_t* _gfx_render_port_find(gfx_render_port_list_t list, str_t label);
+//function gfx_render_connection_t* _gfx_render_connection_alloc(gfx_render_graph_t* render_graph);
+//function gfx_render_connection_t* _gfx_render_connection_find(gfx_render_graph_t* render_graph, gfx_render_port_t* from, gfx_render_port_t* to);
+//
 // mesh internal
-function void _gfx_mesh_load_from_obj(arena_t* arena, gfx_mesh_t* mesh, str_t filepath);
-function void _gfx_mesh_load_from_binary(arena_t* arena, gfx_mesh_t* mesh, str_t filepath);
-function void _gfx_mesh_write_to_obj(gfx_mesh_t* mesh, str_t filepath);
-function void _gfx_mesh_write_to_binary(gfx_mesh_t* mesh, str_t filepath);
+//function void _gfx_mesh_load_from_obj(arena_t* arena, gfx_mesh_t* mesh, str_t filepath);
+//function void _gfx_mesh_load_from_binary(arena_t* arena, gfx_mesh_t* mesh, str_t filepath);
+//function void _gfx_mesh_write_to_obj(gfx_mesh_t* mesh, str_t filepath);
+//function void _gfx_mesh_write_to_binary(gfx_mesh_t* mesh, str_t filepath);
+//
+//function void _gfx_meshes_load_from_obj();
 
 //~ low level functions
 

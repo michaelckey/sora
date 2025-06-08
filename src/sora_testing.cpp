@@ -24,7 +24,7 @@ app_init() {
     
     // open window and create renderer
     window = os_window_open(str("sora testing"), 1280, 720);
-    renderer = gfx_renderer_create(window, color(0x111317ff));
+    renderer = gfx_renderer_create(window);
     
     // set window frame function
     os_window_set_frame_function(window, app_frame);
@@ -43,9 +43,8 @@ app_release() {
 function void
 app_frame() {
     
-    // update layers
-    os_update();
-    gfx_update();
+    // get events
+    os_get_events();
     
     // full screen
     if (os_key_press(window, os_key_F11)) {
@@ -57,30 +56,14 @@ app_frame() {
         quit = true;
     }
     
+    // update window and renderer
+    os_window_update(window);
+    gfx_renderer_update(renderer);
+    
     // render
-    if (!gfx_handle_equals(renderer, { 0 })) {
-        gfx_renderer_begin(renderer);
-        uvec2_t renderer_size = gfx_renderer_get_size(renderer);
-        
-        draw_begin(renderer);
-        
-        
-        draw_text(str("Hello, World!"), vec2(5.0f, 5.0f));
-        
-        vec2_t center = vec2(renderer_size.x * 0.5f, renderer_size.y *0.5f);
-        
-        vec2_t p0 = vec2_add(center, vec2(-100.0f, 50.0f));
-        vec2_t p1 = vec2_add(center, vec2(0.0f, -123.0f));
-        vec2_t p2 = vec2_add(center, vec2(100.0f, 50.0f));
-        
-        draw_set_next_color0(color(0xff4545ff));
-        draw_set_next_color1(color(0x45ff45ff));
-        draw_set_next_color2(color(0x4545ffff));
-        draw_tri(p0, p1, p2);
-        
-        draw_end(renderer);
-        gfx_renderer_end(renderer);
-    }
+    gfx_renderer_clear(renderer, color(0x121416ff));
+    
+    gfx_renderer_present(renderer);
     
 }
 
@@ -93,7 +76,6 @@ app_entry_point(i32 argc, char** argv) {
     os_init();
     gfx_init();
     font_init();
-    draw_init();
     
     app_init();
     
@@ -105,7 +87,6 @@ app_entry_point(i32 argc, char** argv) {
     // release
     app_release();
     
-    draw_release();
     font_release();
     gfx_release();
     os_release();

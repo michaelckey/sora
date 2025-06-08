@@ -591,6 +591,7 @@ app_frame() {
             
             data->prev = closest_item;
         }
+
         ui_pop_size();
         
         //- scrollable list

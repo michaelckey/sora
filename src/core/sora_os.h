@@ -260,6 +260,8 @@ function b8               os_any_window_exist();
 function void             os_set_cursor(os_cursor cursor);
 function os_system_info_t os_get_system_info();
 function u32              os_get_thread_id();
+function u64              os_get_cpu_freq();
+function u64              os_get_cpu_time();
 
 function os_modifiers os_get_modifiers();
 function b8           os_key_is_down(os_key key);

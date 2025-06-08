@@ -85,6 +85,13 @@ arena_create(u64 size) {
 	return arena;
 }
 
+function arena_t* 
+arena_create_aligned(u64 size, u32 align) {
+    arena_t* arena = arena_create(size);
+    arena->align = align;
+    return arena;
+}
+
 function void
 arena_release(arena_t* arena) {
 	os_mem_release(arena, arena->size);
@@ -634,7 +641,20 @@ str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace) {
     str_t result = str((char*)base, new_size);
     
     return result;
+    
 }
+
+function u64
+str_hash(u64 seed, str_t string) {
+    u64 result = seed;
+    if (string.size != 0) {
+        for (u64 i = 0; i < string.size; i += 1) {
+            result = ((result << 5) + result) + string.data[i];
+        }
+    }
+    return result;
+}
+
 
 //- str list
 
@@ -697,20 +717,20 @@ str_split(arena_t* arena, str_t string, u8* splits, u32 split_count) {
 		ptr += 1;
 	}
     
-	return(list);
+	return list;
 }
 
-function u64
-str_hash(u64 seed, str_t string) {
-    u64 result = seed;
-    if (string.size != 0) {
-        for (u64 i = 0; i < string.size; i += 1) {
-            result = ((result << 5) + result) + string.data[i];
-        }
+function str_t* 
+str_array_from_list(arena_t* arena, str_list_t* list) {
+    str_t* array = nullptr;
+    array = (str_t*)arena_alloc(arena, sizeof(str_t) * list->count);
+    u32 index = 0;
+    for(str_node_t* n = list->first; n != nullptr; n = n->next, index ++) {
+        array[index] = n->string;
     }
-    return result;
+    
+    return array;
 }
-
 
 //- str16 functions
 
@@ -1929,6 +1949,49 @@ quat_slerp(quat_t a, quat_t b, f32 t) {
 	return result;
 }
 
+inlnfunc quat_t
+quat_look_at(vec3_t from, vec3_t to, vec3_t up) {
+    
+    vec3_t forward = vec3_normalize(vec3_sub(to, from));
+    vec3_t right = vec3_normalize(vec3_cross(up, forward));
+    vec3_t new_up = vec3_cross(forward, right);
+    
+    f32 m00 = right.x,  m01 = right.y,  m02 = right.z;
+    f32 m10 = new_up.x, m11 = new_up.y, m12 = new_up.z;
+    f32 m20 = forward.x, m21 = forward.y, m22 = forward.z;
+    
+    f32 trace = m00 + m11 + m22;
+    quat_t q;
+    
+    if (trace > 0.0f) {
+        f32 s = sqrtf(trace + 1.0f) * 2.0f;
+        q.w = 0.25f * s;
+        q.x = (m21 - m12) / s;
+        q.y = (m02 - m20) / s;
+        q.z = (m10 - m01) / s;
+    } else if ((m00 > m11) && (m00 > m22)) {
+        f32 s = sqrtf(1.0f + m00 - m11 - m22) * 2.0f;
+        q.w = (m21 - m12) / s;
+        q.x = 0.25f * s;
+        q.y = (m01 + m10) / s;
+        q.z = (m02 + m20) / s;
+    } else if (m11 > m22) {
+        f32 s = sqrtf(1.0f + m11 - m00 - m22) * 2.0f;
+        q.w = (m02 - m20) / s;
+        q.x = (m01 + m10) / s;
+        q.y = 0.25f * s;
+        q.z = (m12 + m21) / s;
+    } else {
+        f32 s = sqrtf(1.0f + m22 - m00 - m11) * 2.0f;
+        q.w = (m10 - m01) / s;
+        q.x = (m02 + m20) / s;
+        q.y = (m12 + m21) / s;
+        q.z = 0.25f * s;
+    }
+    
+    return q;
+    
+}
 
 //- mat3
 
@@ -2427,6 +2490,11 @@ color(f32 r, f32 g, f32 b, f32 a) {
 	return col;
 }
 
+inlnfunc b8 
+color_equals(color_t a, color_t b) {
+    return (a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a);
+}
+
 inlnfunc color_t
 color_add(color_t a, f32 b) {
 	return { clamp_01(a.r + b), clamp_01(a.g + b), clamp_01(a.b + b), clamp_01(a.a + b) };
@@ -2448,7 +2516,7 @@ color_lerp(color_t a, color_t b, f32 t) {
 }
 
 inlnfunc color_t
-color_rgb_to_hsv(color_t rgb) {
+color_hsv_from_rgb(color_t rgb) {
     
 	f32 c_max = max(rgb.r, max(rgb.g, rgb.b));
 	f32 c_min = min(rgb.r, min(rgb.g, rgb.b));
@@ -2469,12 +2537,12 @@ color_rgb_to_hsv(color_t rgb) {
 	hsv_color.s = s;
 	hsv_color.v = v;
 	hsv_color.a = rgb.a;
-	return hsv_color;
     
+	return hsv_color;
 }
 
 inlnfunc color_t
-color_hsv_to_rgb(color_t hsv) {
+color_rgb_from_hsv(color_t hsv) {
 	
 	f32 h = fmodf(hsv.h * 360.0f, 360.0f);
 	f32 s = hsv.s;
@@ -2521,6 +2589,16 @@ color_hsv_to_rgb(color_t hsv) {
 	rgb_color.a = hsv.a;
     
 	return rgb_color;
+}
+
+function u32
+color_hex_from_rgb(color_t rgb) {
+    u8 r = (u8)(rgb.r * 255.0f + 0.5f);
+    u8 g = (u8)(rgb.g * 255.0f + 0.5f);
+    u8 b = (u8)(rgb.b * 255.0f + 0.5f);
+    u8 a = (u8)(rgb.a * 255.0f + 0.5f);
+    
+    return (r << 24) | (g << 16) | (b << 8) | a;
 }
 
 function color_t 

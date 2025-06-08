@@ -21,7 +21,7 @@
 // [ ] - tables.
 // [ ] - 
 
-//- defines 
+//~ defines 
 
 // ui element building stack
 #define ui_stack_list \
@@ -40,7 +40,7 @@ ui_stack(size_y, ui_size_t, { 0 })\
 ui_stack(padding_x, f32, 0.0f)\
 ui_stack(padding_y, f32, 0.0f)\
 ui_stack(layout_dir, ui_dir, ui_dir_down)\
-ui_stack(text_alignment, ui_text_alignment, ui_text_align_left)\
+ui_stack(text_alignment, ui_text_alignment, ui_text_align_center)\
 ui_stack(hover_cursor, os_cursor, os_cursor_null)\
 ui_stack(rounding_00, f32, 4.0f)\
 ui_stack(rounding_01, f32, 4.0f)\
@@ -54,25 +54,17 @@ ui_stack(font_size, f32, 9.0f)\
 
 // ui rendering stack
 #define ui_r_stack_list \
-ui_r_stack(color0, color_t, { 0 })\
-ui_r_stack(color1, color_t, { 0 })\
-ui_r_stack(color2, color_t, { 0 })\
-ui_r_stack(color3, color_t, { 0 })\
-ui_r_stack(radius0, f32, 0.0f)\
-ui_r_stack(radius1, f32, 0.0f)\
-ui_r_stack(radius2, f32, 0.0f)\
-ui_r_stack(radius3, f32, 0.0f)\
-ui_r_stack(thickness, f32, 0.0f)\
-ui_r_stack(softness, f32, 0.0f)\
-ui_r_stack(font, font_handle_t, ui_font_default)\
-ui_r_stack(font_size, f32, 12.0f)\
 ui_r_stack(clip_mask, rect_t, { 0 })\
-ui_r_stack(texture, gfx_handle_t, { 0 })\
+ui_r_stack(color0, color_t, color(1.0f, 1.0f, 1.0f, 1.0f) )\
+ui_r_stack(color1, color_t, color(1.0f, 1.0f, 1.0f, 1.0f) )\
+ui_r_stack(color2, color_t, color(1.0f, 1.0f, 1.0f, 1.0f) )\
+ui_r_stack(color3, color_t, color(1.0f, 1.0f, 1.0f, 1.0f) )\
 
-#define ui_r_max_clip_rects 128
-#define ui_r_max_textures 16
+#define ui_r_max_clip_mask_count 64
+#define ui_r_max_color_count 1024
+#define ui_r_max_texture_count 16
 
-//- enums 
+//~ enums 
 
 enum ui_icon {
     ui_icon_user = ' ',
@@ -169,6 +161,7 @@ enum ui_icon {
     ui_icon_database = '{',
     ui_icon_eyecropper = '|',
     ui_icon_brush = '}',
+    ui_icon_draggable = '~',
 };
 
 enum ui_size_type {
@@ -259,6 +252,17 @@ enum ui_drag_state {
     ui_drag_state_count,
 };
 
+enum ui_data_type {
+    ui_data_type_null,
+    ui_data_type_f32,
+    ui_data_type_i32,
+    ui_data_type_u32,
+    ui_data_type_vec2,
+    ui_data_type_vec3,
+    ui_data_type_vec4,
+    ui_data_type_color,
+};
+
 typedef u64 ui_node_flags;
 enum {
     ui_flag_null = (0),
@@ -283,18 +287,21 @@ enum {
     ui_flag_overflow_y = (1 << 14),
     ui_flag_ignore_view_offset_x = (1 << 14),
     ui_flag_ignore_view_offset_y = (1 << 15),
+    ui_flag_ignore_parent_offset_x = (1 << 16),
+    ui_flag_ignore_parent_offset_y = (1 << 17),
     
     // appearance
-    ui_flag_draw_background = (1 << 16),
-    ui_flag_draw_text = (1 << 17),
-    ui_flag_draw_border = (1 << 18),
-    ui_flag_draw_shadow = (1 << 19),
-    ui_flag_draw_hover_effects = (1 << 20),
-    ui_flag_draw_active_effects = (1 << 21),
-    ui_flag_draw_custom = (1 << 22),
-    ui_flag_anim_pos_x = (1 << 23),
-    ui_flag_anim_pos_y = (1 << 24),
-    ui_flag_clip = (1 << 25),
+    ui_flag_draw_background = (1 << 18),
+    ui_flag_draw_gradient = (1 << 19),
+    ui_flag_draw_text = (1 << 20),
+    ui_flag_draw_border = (1 << 21),
+    ui_flag_draw_shadow = (1 << 22),
+    ui_flag_draw_hover_effects = (1 << 23),
+    ui_flag_draw_active_effects = (1 << 24),
+    ui_flag_draw_custom = (1 << 25),
+    ui_flag_anim_pos_x = (1 << 26),
+    ui_flag_anim_pos_y = (1 << 27),
+    ui_flag_clip = (1 << 28),
     
     // groups
     ui_flag_interactable = ui_flag_mouse_interactable | ui_flag_keyboard_interactable,
@@ -305,6 +312,7 @@ enum {
     ui_flag_overflow = ui_flag_overflow_x | ui_flag_overflow_y, 
     ui_flag_ignore_view_offset = ui_flag_ignore_view_offset_x | ui_flag_ignore_view_offset_y,
     ui_flag_anim_pos = ui_flag_anim_pos_x | ui_flag_anim_pos_y,
+    ui_flag_ignore_parent_offset = ui_flag_ignore_parent_offset_x | ui_flag_ignore_parent_offset_y,
     
 };
 
@@ -359,50 +367,31 @@ enum {
 enum ui_r_shape{
 	ui_r_shape_none,
 	ui_r_shape_rect,
-	ui_r_shape_quad,
 	ui_r_shape_line,
 	ui_r_shape_circle,
 	ui_r_shape_ring,
 	ui_r_shape_tri,
 };
 
+
 //- typedefs 
 
 struct ui_node_t;
 typedef void ui_node_custom_draw_func(ui_node_t*);
 
-//- structs 
+//~ structs 
 
-// key
+//- key
 struct ui_key_t {
     u64 data[1];
 };
 
-// size
+//- size
 struct ui_size_t {
     ui_size_type type;
     f32 value;
     f32 strictness;
 };
-
-// theme
-struct ui_theme_pattern_t {
-    ui_theme_pattern_t* next;
-    ui_theme_pattern_t* prev;
-    ui_key_t key;
-    color_t color;
-};
-
-struct ui_theme_pattern_hash_list_t {
-    ui_theme_pattern_t* first;
-    ui_theme_pattern_t* last;
-};
-
-struct ui_theme_t {
-    ui_theme_pattern_hash_list_t* theme_pattern_hash_list;
-    u32 theme_pattern_hash_list_count;
-};
-
 
 struct ui_text_point_t {
     i32 line;
@@ -414,7 +403,7 @@ struct ui_text_range_t {
     ui_text_point_t max;
 };
 
-// text op
+//- text op
 struct ui_text_op_t {
     ui_text_op_flags flags;
     str_t replace;
@@ -424,7 +413,7 @@ struct ui_text_op_t {
     ui_text_point_t mark;
 };
 
-// key binding
+//- key binding
 struct ui_key_binding_t {
     ui_key_binding_t* next;
     ui_key_binding_t* prev;
@@ -443,7 +432,8 @@ struct ui_key_binding_list_t {
     ui_key_binding_t* last;
 };
 
-// events
+//- events
+
 struct ui_event_t {
     ui_event_t* next;
     ui_event_t* prev;
@@ -460,7 +450,8 @@ struct ui_event_list_t {
     ui_event_t* last;
 };
 
-// node 
+//- node 
+
 struct ui_node_t {
     
     // list
@@ -537,7 +528,7 @@ struct ui_node_list_t {
     u32 count;
 };
 
-// animation 
+//- animation 
 
 struct ui_anim_params_t {
     f32 initial;
@@ -567,16 +558,93 @@ struct ui_anim_hash_list_t {
     u32 count;
 };
 
-// tags
+//- data 
 
-struct ui_tags_node_t {
-    ui_tags_node_t* next;
+struct ui_data_node_t {
+    
+    ui_data_node_t* list_next;
+    ui_data_node_t* list_prev;
+    
+    ui_data_node_t* lru_next;
+    ui_data_node_t* lru_prev;
+    
+    u64 first_build_index;
+    u64 last_build_index;
+    
     ui_key_t key;
+    ui_data_type type;
+    
+    union {
+        f32 f32_value;
+        i32 i32_value;
+        u32 u32_value;
+        vec2_t vec2_value;
+        vec3_t vec3_value;
+        vec4_t vec4_value;
+        color_t color_value;
+    };
+    
 };
 
-struct ui_tags_hash_list_t {
-    ui_tags_node_t* first;
-    ui_tags_node_t* last;
+struct ui_data_hash_list_t {
+    ui_data_node_t* first;
+    ui_data_node_t* last;
+};
+
+//- color cache 
+
+struct ui_color_cache_node_t {
+    ui_color_cache_node_t* list_next;
+    ui_color_cache_node_t* list_prev;
+    
+    ui_color_cache_node_t* lru_next;
+    ui_color_cache_node_t* lru_prev;
+    
+    u64 first_build_index;
+    u64 last_build_index;
+    
+    ui_key_t key;
+    
+    color_t target_color;
+    color_t current_color;
+};
+
+struct ui_color_cache_hash_list_t {
+    ui_color_cache_node_t* first;
+    ui_color_cache_node_t* last;
+};
+
+//- theme 
+
+struct ui_theme_pattern_t {
+    ui_theme_pattern_t* next;
+    ui_theme_pattern_t* prev;
+    
+    str_t* tags;
+    u32 tag_count;
+    
+    color_t col;
+};
+
+struct ui_theme_t {
+    ui_theme_pattern_t* first;
+    ui_theme_pattern_t* last;
+};
+
+//- tags 
+
+struct ui_tags_cache_node_t {
+    ui_tags_cache_node_t* next;
+    ui_tags_cache_node_t* prev;
+    
+    ui_key_t key;
+    str_t* tags;
+    u32 tag_count;
+};
+
+struct ui_tags_cache_hash_list_t {
+    ui_tags_cache_node_t* first;
+    ui_tags_cache_node_t* last;
 };
 
 struct ui_tags_stack_node_t {
@@ -584,29 +652,47 @@ struct ui_tags_stack_node_t {
     ui_key_t key;
 };
 
-// rendering
+//- rendering
 
-struct ui_r_constants_t {
+struct ui_r_window_constants_t {
     vec2_t window_size;
-    vec2_t padding;
-    rect_t clip_masks[ui_r_max_clip_rects];
+};
+
+struct ui_r_clip_mask_constants_t { 
+    rect_t clip_masks[ui_r_max_clip_mask_count];
+};
+
+struct ui_r_color_constants_t {
+    color_t colors[ui_r_max_color_count];
 };
 
 struct ui_r_instance_t {
-    rect_t bbox;
-	rect_t tex;
-	vec2_t point0;
-	vec2_t point1;
-	vec2_t point2;
-	vec2_t point3;
-	color_t color0;
-	color_t color1;
-	color_t color2;
-	color_t color3;
-	vec4_t radii;
-	f32 thickness;
-	f32 softness;
-	u32 indices;
+    vec2_t p0;
+    vec2_t p1;
+    vec2_t uv0;
+    vec2_t uv1;
+    
+    // style
+    f32 softness;
+    f32 thickness;
+    f32 params_0;
+    f32 params_1;
+    f32 params_2;
+    f32 params_3;
+    f32 params_4;
+    f32 params_5;
+    
+    // indices
+    i8 clip_mask_index; 
+    i8 texture_index;
+    i8 shape_index;
+    i8 unused;
+    
+    // color indices
+    u16 color_index_0;
+    u16 color_index_1;
+    u16 color_index_2;
+    u16 color_index_3;
 };
 
 struct ui_r_batch_t {
@@ -617,7 +703,7 @@ struct ui_r_batch_t {
 	u32 instance_count;
 };
 
-// stacks
+//- stacks
 
 // element building stacks
 #define ui_stack(name, type) \
@@ -633,7 +719,7 @@ struct ui_r_##name##_stack_t { ui_r_##name##_node_t* top; ui_r_##name##_node_t* 
 ui_r_stack_list
 #undef ui_r_stack
 
-// context
+//- context
 
 struct ui_context_t {
     
@@ -645,7 +731,7 @@ struct ui_context_t {
     
     // context
     os_handle_t window;
-    gfx_handle_t renderer;
+    gfx_handle_t gfx_context;
     
     // build state
     u64 build_index;
@@ -671,6 +757,11 @@ struct ui_context_t {
     ui_node_t* node_tooltip_root;
     ui_node_t* node_popup_root;
     
+    // popup
+    vec2_t popup_pos;
+    b8 popup_is_open;
+    b8 popup_updated_this_frame;
+    
     // animation cache
     ui_anim_hash_list_t* anim_hash_list;
     u32 anim_hash_list_count;
@@ -682,15 +773,28 @@ struct ui_context_t {
     f32 anim_fast_rate;
     f32 anim_slow_rate;
     
-    // theme pattern hash list
-    ui_theme_pattern_hash_list_t* theme_pattern_hash_list;
-    u32 theme_pattern_hash_list_count;
+    // data cache
+    ui_data_hash_list_t* data_hash_list;
+    u32 data_hash_list_count;
+    ui_data_node_t* data_node_free;
+    ui_data_node_t* data_node_lru;
+    ui_data_node_t* data_node_mru;
+    
+    // theme color cache
+    ui_color_cache_hash_list_t* color_hash_list;
+    u32 color_hash_list_count;
+    ui_color_cache_node_t* color_node_free;
+    ui_color_cache_node_t* color_node_lru;
+    ui_color_cache_node_t* color_node_mru;
+    
+    // theme
+    ui_theme_t* theme;
     
     // tags
-    ui_tags_hash_list_t* tags_hash_list;
-    u32 tags_hash_list_count;
     ui_tags_stack_node_t* tags_stack_top;
     ui_tags_stack_node_t* tags_stack_free;
+    ui_tags_cache_hash_list_t* tags_hash_list;
+    u32 tags_hash_list_count;
     
     // events
     ui_event_list_t event_list;
@@ -707,16 +811,18 @@ struct ui_context_t {
     vec2_t drag_start_pos;
     
     // renderer
-    gfx_handle_t vertex_shader;
-    gfx_handle_t pixel_shader;
-    gfx_handle_t texture;
-    
     gfx_handle_t instance_buffer;
-    gfx_handle_t constant_buffer;
-    ui_r_constants_t constants;
     
-    i32 clip_mask_count;
-    gfx_handle_t texture_list[ui_r_max_textures];
+    gfx_handle_t constant_buffer_window;
+    gfx_handle_t constant_buffer_clip_masks;
+    gfx_handle_t constant_buffer_colors;
+    
+    ui_r_window_constants_t window_constants;
+    ui_r_clip_mask_constants_t clip_mask_constants;
+    u32 clip_mask_count;
+    ui_r_color_constants_t color_constants;
+    u32 color_count;
+    gfx_handle_t texture_list[ui_r_max_texture_count];
 	u32 texture_count;
     
     // renderer batches
@@ -739,82 +845,93 @@ ui_r_##name##_stack_t name##_r_stack;
     
 };
 
-//- globals 
+//~ globals 
 
 global font_handle_t ui_font_icon;
 global font_handle_t ui_font_default;
 thread_global ui_context_t* ui_active_context = nullptr; 
+global gfx_handle_t ui_vertex_shader;
+global gfx_handle_t ui_pixel_shader;
+global gfx_handle_t ui_transparent_texture;
 
-//- functions 
+//~ functions 
 
-// state
+//- state
 function void ui_init();
 function void ui_release();
 function void ui_begin(ui_context_t* context);
 function void ui_end(ui_context_t* context);
+function void ui_render(ui_context_t* context);
 function arena_t* ui_build_arena();
 
-// context
+//- context
 function ui_context_t* ui_context_create(os_handle_t window, gfx_handle_t renderer);
 function void ui_context_release(ui_context_t* context);
 function void ui_context_set_active(ui_context_t* context);
-function void ui_context_add_color(ui_context_t* context, str_t tags, color_t color);
+function void ui_context_default_theme(ui_context_t* context);
 
-// keys
+//- keys
 function ui_key_t ui_key_from_string(ui_key_t seed, str_t string);
 function ui_key_t ui_key_from_stringf(ui_key_t seed, char* fmt, ...);
 function b8 ui_key_equals(ui_key_t a, ui_key_t b);
 
-// size
+//- size
 inlnfunc ui_size_t ui_size(ui_size_type type, f32 value, f32 strictness);
 inlnfunc ui_size_t ui_size_pixels(f32 pixels, f32 strictness = 1.0f);
 inlnfunc ui_size_t ui_size_percent(f32 percent);
 inlnfunc ui_size_t ui_size_by_children(f32 strictness);
 inlnfunc ui_size_t ui_size_by_text(f32 padding);
 
-// axis/side/dir
+//- axis/side/dir
 function ui_axis ui_axis_from_dir(ui_dir dir);
 function ui_side ui_side_from_dir(ui_dir dir);
 function ui_dir ui_dir_from_axis_side(ui_axis axis, ui_side side);
 
-// text alignment
+//- text alignment
 function vec2_t  ui_text_size(font_handle_t font, f32 font_size, str_t text);
 function vec2_t ui_text_align(font_handle_t font, f32 font_size, str_t text, rect_t rect, ui_text_alignment alignment);
+function u32 ui_text_index_from_pos(font_handle_t font, f32 font_size, str_t text, f32 pos);
 
-// text point
+//- text point
 function ui_text_point_t ui_text_point(i32 line, i32 column);
 function b8 ui_text_point_equals(ui_text_point_t a, ui_text_point_t b);
 function b8 ui_text_point_less_than(ui_text_point_t a, ui_text_point_t b);
 function ui_text_point_t ui_text_point_less_min(ui_text_point_t a, ui_text_point_t b);
 function ui_text_point_t ui_text_point_less_max(ui_text_point_t a, ui_text_point_t b);
 
-// text range
+//- text range
 function ui_text_range_t ui_text_range(ui_text_point_t min, ui_text_point_t max);
 function ui_text_range_t ui_text_range_intersects(ui_text_range_t a, ui_text_range_t b);
 function ui_text_range_t ui_text_range_union(ui_text_range_t a, ui_text_range_t b);
 function b8 ui_text_range_contains(ui_text_range_t r, ui_text_point_t p);
 
-// text op
+//- text op
 function ui_text_op_t ui_single_line_text_op_from_event(arena_t *arena, ui_event_t* event, str_t string, ui_text_point_t cursor, ui_text_point_t mark);
 
-// events
+//- events
 function void ui_event_push(ui_event_t* event);
 function void ui_event_pop(ui_event_t* event);
 
-// keybinding
+//- keybinding
 function void ui_key_binding_add(os_key key, os_modifiers modifiers, ui_event_type result_type, ui_event_flags result_flags, ui_event_delta_unit result_delta_unit, ivec2_t result_delta);
 function ui_key_binding_t* ui_key_binding_find(os_key key, os_modifiers modifiers);
 
-// theme
-function color_t ui_color_from_key(ui_key_t key);
-function color_t ui_color_from_string(str_t string);
-
-// animation
+//- animation
 function ui_anim_params_t ui_anim_params_create(f32 initial, f32 target, f32 rate = ui_active_context->anim_fast_rate);
 function f32 ui_anim_ex(ui_key_t key, ui_anim_params_t params);
 function f32 ui_anim(ui_key_t key, f32 initial, f32 target, f32 rate = ui_active_context->anim_fast_rate);
 
-// drag state
+//- data 
+function void* ui_data(ui_key_t key, ui_data_type type, void* initial);
+
+//- color 
+function color_t ui_color_from_key_name(ui_key_t key, str_t name);
+function void ui_context_set_color(ui_context_t* context, str_t tags, color_t col);
+
+//- theme 
+function void ui_theme_add_color(arena_t* arena, ui_theme_t* theme, str_t tags, color_t col);
+
+//- drag state
 function void ui_drag_store_data(void* data, u32 size);
 function void* ui_drag_get_data();
 function void ui_drag_clear_data();
@@ -824,7 +941,7 @@ function b8  ui_drag_drop();
 function void ui_drag_kill();
 function vec2_t ui_drag_delta();
 
-// nodes
+//- nodes
 function ui_node_t* ui_node_find(ui_key_t key); 
 function ui_node_t* ui_node_from_key(ui_node_flags flags, ui_key_t key);
 function ui_node_t* ui_node_from_string(ui_node_flags flags, str_t string);
@@ -833,31 +950,33 @@ function ui_node_rec_t ui_node_rec_depth_first(ui_node_t* node);
 
 function void ui_node_set_custom_draw(ui_node_t* node, ui_node_custom_draw_func* func, void* data);
 
-// interaction
+//- interaction
 function ui_interaction ui_interaction_from_node(ui_node_t* node);
 
-// layout
+//- layout
 function void ui_layout_solve_independent(ui_node_t* node, ui_axis axis);
 function void ui_layout_solve_upward_dependent(ui_node_t* node, ui_axis axis);
 function void ui_layout_solve_downward_dependent(ui_node_t* node, ui_axis axis);
 function void ui_layout_solve_violations(ui_node_t* node, ui_axis axis);
 function void ui_layout_set_positions(ui_node_t* node, ui_axis axis);
 
-// renderer
+//- renderer
 function ui_r_instance_t* ui_r_get_instance();
-function i32 ui_r_get_texture_index(gfx_handle_t texture);
-function i32 ui_r_get_clip_mask_index(rect_t rect);
+function u32 ui_r_get_texture_index(gfx_handle_t texture);
+function u32 ui_r_get_clip_mask_index(rect_t rect);
+function u32 ui_r_get_color_index(color_t color);
 
-function void ui_r_draw_rect(rect_t);
-function void ui_r_draw_image(rect_t);
-function void ui_r_draw_quad(vec2_t, vec2_t, vec2_t, vec2_t);
-function void ui_r_draw_line(vec2_t, vec2_t);
-function void ui_r_draw_circle(vec2_t, f32, f32, f32);
-function void ui_r_draw_tri(vec2_t, vec2_t, vec2_t);
-function void ui_r_draw_text(str_t, vec2_t);
+function void ui_r_instance_set_color(ui_r_instance_t* instance, color_t col);
+function void ui_r_instance_set_colors(ui_r_instance_t* instance, color_t col0, color_t col1, color_t col2, color_t col3);
 
+function ui_r_instance_t* ui_r_draw_rect(rect_t rect, f32 thickess, f32 softness, vec4_t rounding);
+function ui_r_instance_t* ui_r_draw_line(vec2_t p0, vec2_t p1, f32 thickness, f32 softness);
+function ui_r_instance_t* ui_r_draw_circle(vec2_t pos, f32 radius, f32 thickness, f32 softness);
+function ui_r_instance_t* ui_r_draw_ring(vec2_t pos, f32 radius, f32 start_angle, f32 end_angle, f32 thickness, f32 softness);
+function ui_r_instance_t* ui_r_draw_tri(vec2_t p0, vec2_t p1, vec2_t p2, f32 thickness, f32 softness);
+function void ui_r_draw_text(str_t text, vec2_t pos, font_handle_t font, f32 font_size);
 
-// stacks
+//- stacks
 function void ui_auto_pop_stacks();
 
 function ui_node_t* ui_top_parent();
@@ -992,14 +1111,15 @@ function f32 ui_push_font_size(f32 v);
 function f32 ui_pop_font_size();
 function f32 ui_set_next_font_size(f32 v);
 
-// tags
 function ui_key_t ui_top_tags_key();
 function str_t ui_top_tag();
 function str_t ui_push_tag(str_t v);
+function str_t ui_push_tagf(char* fmt, ...);
 function str_t ui_pop_tag();
 function str_t ui_set_next_tag(str_t v);
+function str_t ui_set_next_tagf(char* fmt, ...);
 
-// group stacks
+//- group stacks
 
 function void ui_push_size(ui_size_t size_x, ui_size_t size_y);
 function void ui_pop_size();
@@ -1025,9 +1145,14 @@ function void ui_push_padding(f32 value);
 function void ui_pop_padding();
 function void ui_set_next_padding(f32 value);
 
-// rendering stacks
+//- rendering stacks
 
 function void ui_r_auto_pop_stacks();
+
+function rect_t ui_r_top_clip_mask();
+function rect_t ui_r_push_clip_mask(rect_t); 
+function rect_t ui_r_pop_clip_mask();
+function rect_t ui_r_set_next_clip_mask(rect_t);
 
 function color_t ui_r_top_color0();
 function color_t ui_r_push_color0(color_t);
@@ -1049,66 +1174,9 @@ function color_t ui_r_push_color3(color_t);
 function color_t ui_r_pop_color3(); 
 function color_t ui_r_set_next_color3(color_t);
 
-function f32 ui_r_top_radius0(); 
-function f32 ui_r_push_radius0(f32); 
-function f32 ui_r_pop_radius0(); 
-function f32 ui_r_set_next_radius0(f32);
-
-function f32 ui_r_top_radius1();
-function f32 ui_r_push_radius1(f32);
-function f32 ui_r_pop_radius1(); 
-function f32 ui_r_set_next_radius1(f32);
-
-function f32 ui_r_top_radius2(); 
-function f32 ui_r_push_radius2(f32);
-function f32 ui_r_pop_radius2();
-function f32 ui_r_set_next_radius2(f32);
-
-function f32 ui_r_top_radius3(); 
-function f32 ui_r_push_radius3(f32);
-function f32 ui_r_pop_radius3(); 
-function f32 ui_r_set_next_radius3(f32);
-
-function f32 ui_r_top_thickness(); 
-function f32 ui_r_push_thickness(f32);
-function f32 ui_r_pop_thickness(); 
-function f32 ui_r_set_next_thickness(f32);
-
-function f32 ui_r_top_softness(); 
-function f32 ui_r_push_softness(f32); 
-function f32 ui_r_pop_softness();
-function f32 ui_r_set_next_softness(f32);
-
-function font_handle_t ui_r_top_font(); 
-function font_handle_t ui_r_push_font(font_handle_t); 
-function font_handle_t ui_r_pop_font(); 
-function font_handle_t ui_r_set_next_font(font_handle_t);
-
-function f32 ui_r_top_font_size(); 
-function f32 ui_r_push_font_size(f32); 
-function f32 ui_r_pop_font_size(); 
-function f32 ui_r_set_next_font_size(f32);
-
-function rect_t ui_r_top_clip_mask();
-function rect_t ui_r_push_clip_mask(rect_t); 
-function rect_t ui_r_pop_clip_mask();
-function rect_t ui_r_set_next_clip_mask(rect_t);
-
-function gfx_handle_t ui_r_top_texture();
-function gfx_handle_t ui_r_push_texture(gfx_handle_t);
-function gfx_handle_t ui_r_pop_texture();
-function gfx_handle_t ui_r_set_next_texture(gfx_handle_t);
-
 // group stacks
 function void ui_r_push_color(color_t);
 function void ui_r_set_next_color(color_t);
 function void ui_r_pop_color();
-
-function vec4_t ui_r_top_rounding();
-function void ui_r_push_rounding(f32);
-function void ui_r_push_rounding(vec4_t);
-function void ui_r_set_next_rounding(f32);
-function void ui_r_set_next_rounding(vec4_t);
-function void ui_r_pop_rounding();
 
 #endif // SORA_UI_CORE_H

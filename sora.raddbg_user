@@ -1,4 +1,4 @@
-// raddbg 0.9.17 user file
+// raddbg 0.9.18 user file
 
 recent_project: path: "sora.raddbg_project"
 recent_project: path: "../../AppData/Roaming/raddbg/default.raddbg_project"
@@ -15,11 +15,13 @@ window:
     {
       0.343007:
       {
+        selected
         watch:
         {
           selected
           expression: ""
-          watch: ""
+          watch: "geo3d()"
+          expr_and_error: 0.372394 0.627607
         }
         watch: expression: "query:type_views"
       }
@@ -42,10 +44,8 @@ window:
     }
     0.725476:
     {
-      selected
       text:
       {
-        selected
         expression: "file:\"C:/Users/keymi/Desktop/sora/src/gfx_test.cpp\".data"
         project: "C:/Users/keymi/Desktop/sora/sora.raddbg_project"
         query: input: ""
@@ -56,6 +56,7 @@ window:
       }
       text:
       {
+        selected
         expression: "file:\"C:/Users/keymi/Desktop/sora/src/core/sora_gfx.cpp\".data"
         auto: 1
         query: input: ""

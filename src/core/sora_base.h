@@ -220,8 +220,11 @@ typedef bool b8;
 
 typedef const char* cstr;
 
-typedef volatile u32 atomic_u32;
-typedef volatile u64 atomic_u64;
+typedef volatile uint32_t atomic_u32;
+typedef volatile int32_t atomic_i32;
+typedef volatile uint64_t atomic_u64;
+typedef volatile int64_t atomic_i64;
+typedef volatile void* atomic_ptr;
 
 //~ atmomics
 
@@ -229,19 +232,25 @@ typedef volatile u64 atomic_u64;
 
 #include <intrin.h>
 
-#define atomic_u32_load(x) _InterlockedOr((volatile long*)(x), 0)
-#define atomic_u32_assign(x, c) _InterlockedExchange((volatile long*)(x), (c))
-#define atomic_u32_inc(x) _InterlockedExchangeAdd((volatile long*)(x), 1)
-#define atomic_u32_dec(x) _InterlockedExchangeAdd((volatile long*)(x), -1)
-#define atomic_u32_add(x, c) _InterlockedExchangeAdd((volatile long*)(x), (c))
-#define atomic_u32_cond_assign(x, k, c) (_InterlockedCompareExchange((volatile long*)(x), (k), (c)) == c)
+#define atomic_i32_load(x) _InterlockedOr((volatile long*)(x), 0)
+#define atomic_i32_assign(x, c) _InterlockedExchange((volatile long*)(x), (c))
+#define atomic_i32_inc(x) _InterlockedExchangeAdd((volatile long*)(x), 1)
+#define atomic_i32_dec(x) _InterlockedExchangeAdd((volatile long*)(x), -1)
+#define atomic_i32_add(x, c) _InterlockedExchangeAdd((volatile long*)(x), (c))
+#define atomic_i32_cond_assign(x, k, c) (_InterlockedCompareExchange((volatile long*)(x), (k), (c)) == c)
 
-#define atomic_u64_load(x) _InterlockedOr64((volatile long long*)(x), 0)
-#define atomic_u64_assign(x, c) _InterlockedExchange64((volatile long long*)(x), (c))
-#define atomic_u64_inc(x) _InterlockedExchangeAdd64((volatile long long*)(x), 1)
-#define atomic_u64_dec(x) _InterlockedExchangeAdd64((volatile long long*)(x), -1)
-#define atomic_u64_add(x, c) _InterlockedExchangeAdd64((volatile long long*)(x), (c))
-#define atomic_u64_cond_assign(x, k, c) (_InterlockedCompareExchange64((volatile long long*)(x), (k), (c)) == c)
+#define atomic_i64_load(x) _InterlockedOr64((volatile long long*)(x), 0)
+#define atomic_i64_assign(x, c) _InterlockedExchange64((volatile long long*)(x), (c))
+#define atomic_i64_inc(x) _InterlockedExchangeAdd64((volatile long long*)(x), 1)
+#define atomic_i64_dec(x) _InterlockedExchangeAdd64((volatile long long*)(x), -1)
+#define atomic_i64_add(x, c) _InterlockedExchangeAdd64((volatile long long*)(x), (c))
+#define atomic_i64_cond_assign(x, k, c) (_InterlockedCompareExchange64((volatile long long*)(x), (k), (c)) == c)
+
+#define atomic_ptr_load(x) ((void*)_InterlockedCompareExchangePointer((void* volatile*)(x), NULL, NULL))
+#define atomic_ptr_assign(x, v) ((void*)_InterlockedExchangePointer((void* volatile*)(x), (void*)(v)))
+#define atomic_ptr_cond_assign(x, k, c) (_InterlockedCompareExchangePointer((void* volatile*)(x), (void*)(k), (void*)(c)) == (void*)(c))
+
+#define atomic_memory_barrier() MemoryBarrier()
 
 #elif COMPILER_CLANG || COMPILER_GCC
 
@@ -590,6 +599,8 @@ union rect_t {
 
 union color_t {
     
+    f32 data[4];
+    
 	struct { 
 		f32 r, g, b, a; 
 	};
@@ -598,6 +609,8 @@ union color_t {
 		f32 h, s, v, _unused0;
 	};
     
+    inline f32& operator[](i32 index) { return data[index]; }
+	inline const f32& operator[](i32 index) const { return data[index]; }
 };
 
 
@@ -696,6 +709,7 @@ function str_t str_replace_range(arena_t* arena, str_t string, ivec2_t range, st
 function void str_list_push_node(str_list_t* list, str_node_t* node);
 function void str_list_push(arena_t* arena, str_list_t* list, str_t string);
 function str_list_t str_split(arena_t* arena, str_t string, u8* splits, u32 split_count);
+function str_t* str_array_from_list(arena_t* arena, str_list_t* list);
 
 //- str16
 function str16_t str16(u16* data);
@@ -862,6 +876,7 @@ inlnfunc quat_t quat_normalize(quat_t);
 inlnfunc quat_t quat_negate(quat_t);
 inlnfunc quat_t quat_lerp(quat_t, quat_t, f32);
 inlnfunc quat_t quat_slerp(quat_t, quat_t, f32);
+inlnfunc quat_t quat_look_at(vec3_t from, vec3_t to, vec3_t up);
 
 //- mat4
 inlnfunc mat4_t mat4(f32);
@@ -887,11 +902,12 @@ function void   mat4_print(mat4_t);
 inlnfunc color_t color(u32 hex);
 inlnfunc color_t color(f32 r, f32 g, f32 b, f32 a = 1.0f);
 inlnfunc color_t color_hsv(f32 h, f32 s, f32 v, f32 a = 1.0f);
+inlnfunc b8      color_equals(color_t a, color_t b);
 inlnfunc color_t color_add(color_t a, f32 b);
 inlnfunc color_t color_add(color_t a, color_t b);
 inlnfunc color_t color_lerp(color_t a, color_t b, f32 t);
-inlnfunc color_t color_rgb_to_hsv(color_t rgb);
-inlnfunc color_t color_hsv_to_rgb(color_t hsv);
+inlnfunc color_t color_hsv_from_rgb(color_t rgb);
+inlnfunc color_t color_rgb_from_hsv(color_t hsv);
 function color_t color_blend(color_t a, color_t b, color_blend_mode mode = color_blend_mode_normal);
 inlnfunc u32     color_to_hex(color_t color);
 

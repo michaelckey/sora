@@ -1022,8 +1022,6 @@ function os_handle_t
 os_fiber_create(u32 stack_size, os_fiber_function_t* fiber_func, void* params) {
     os_w32_entity_t* entity = os_w32_entity_create(os_w32_entity_type_fiber);
     
-    //entity->fiber.params = params;
-    //entity->fiber.func = fiber_func;
     entity->fiber.fiber_id = CreateFiber(stack_size, (LPFIBER_START_ROUTINE)fiber_func, params);
     
     os_handle_t handle = { (u64)entity };

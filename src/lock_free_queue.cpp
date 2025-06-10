@@ -8,32 +8,19 @@
 #include "ui/sora_ui_inc.h"
 #include "ui/sora_ui_inc.cpp"
 
+#include "utils/queue.h"
+#include "utils/queue.cpp"
+
+#include "utils/task.h"
+#include "utils/task.cpp"
+
 //~ defines 
 
-#define num_threads 10
+#define num_threads 5
 #define items_per_producer 1000
 #define items_total (num_threads * items_per_producer)
 
 //~ structs 
-
-struct slot_t {
-    void* data;
-    atomic_i64 sequence;
-};
-
-struct queue_t {
-    
-    arena_t* arena;
-    
-    __declspec(align(64)) atomic_i64 head;
-    __declspec(align(64)) atomic_i64 tail;
-    
-    u32 capacity;
-    u32 mask;
-    
-    __declspec(align(64)) slot_t* slots;
-};
-
 
 struct profile_slot_t {
     cstr name;
@@ -63,30 +50,11 @@ global gfx_handle_t context;
 global ui_context_t* ui;
 global b8 quit = false;
 
-global queue_t* queue;
-global atomic_i32 produced; 
-global atomic_i32 consumed;
-
 global profile_graph_t profile_graph;
 
 //~ functions
 
-// queue
-
-function void queue_init(queue_t* queue, u32 capacity);
-function b8 queue_enqueue(queue_t* queue, void* data);
-function b8 queue_dequeue(queue_t* queue, void** data);
-
-function b8 queue_empty(queue_t* queue);
-function b8 queue_full(queue_t* queue);
-
-// thread
-function void thread_producer(void* params);
-function void thread_consumer(void* params);
-
-
 // profiler
-
 function void profile_init();
 function void profile_release();
 function void profile_begin();
@@ -102,159 +70,7 @@ function void app_frame();
 
 //~ implementation 
 
-//- queue functions 
-
-function queue_t* 
-queue_create(u32 capacity) {
-    
-    arena_t* arena = arena_create_aligned(megabytes(64), 64);
-    
-    queue_t* queue = (queue_t*)arena_calloc(arena, sizeof(queue_t));
-    
-    queue->arena = arena;
-    
-    queue->capacity = capacity;
-    queue->mask = capacity - 1;
-    atomic_i64_assign(&queue->head, 0);
-    atomic_i64_assign(&queue->tail, 0);
-    
-    queue->slots = (slot_t*)arena_calloc(arena, sizeof(slot_t) * capacity);
-    
-    for (i32 i = 0; i < capacity; i++) {
-        atomic_ptr_assign(&queue->slots[i].data, nullptr);
-        atomic_i64_assign(&queue->slots[i].sequence, (i64)i);
-    }
-    
-    return queue;
-}
-
-
-function b8
-queue_enqueue(queue_t* queue, void* data) {
-    
-    i64 tail;
-    slot_t* slot;
-    i64 sequence;
-    i64 diff;
-    b8 result = false;
-    u32 backoff = 1;
-    
-    for (;;) {
-        
-        tail = atomic_i64_load(&queue->tail);
-        slot = &queue->slots[tail & queue->mask];
-        sequence = atomic_i64_load(&slot->sequence);
-        
-        diff = sequence - tail;
-        if (diff == 0) {
-            if (atomic_i64_cond_assign(&queue->tail, tail + 1, tail)) {
-                atomic_ptr_assign(&slot->data, data);
-                atomic_memory_barrier();
-                atomic_i64_assign(&slot->sequence, tail + 1);
-                result = true;
-                break;
-            } else {
-                for (u32 i = 0; i < backoff; i++) {
-                    _mm_pause();
-                }
-                backoff = min(backoff * 2, 64);
-            }
-        } else if (diff < 0) {
-            // queue is full
-            break;
-        }
-    }
-    
-    return result;
-}
-
-function b8
-queue_dequeue(queue_t* queue, void** data) {
-    
-    i64 head;
-    slot_t* slot;
-    i64 sequence;
-    i64 diff;
-    b8 result = false;
-    u32 backoff = 1;
-    
-    for (;;) {
-        
-        head = atomic_i64_load(&queue->head);
-        slot = &queue->slots[head & queue->mask];
-        sequence = atomic_i64_load(&slot->sequence);
-        
-        diff = sequence - (head + 1);
-        if (diff == 0) {
-            if (atomic_i64_cond_assign(&queue->head, head + 1, head)) {
-                *data = atomic_ptr_load(&slot->data);
-                atomic_memory_barrier();
-                atomic_i64_assign(&slot->sequence, head + queue->capacity);
-                result = true;
-                break;
-            } else {
-                for (u32 i = 0; i < backoff; i++) {
-                    _mm_pause();
-                }
-                backoff = min(backoff * 2, 64);
-            }
-        } else if (diff < 0) {
-            break;
-        }
-    }
-    
-    return result;
-}
-
-function b8 
-queue_empty(queue_t* queue) {
-    i64 head = queue->head;
-    i64 tail = queue->tail;
-    return (head >= tail);
-}
-
-function b8 
-queue_full(queue_t* queue) {
-    i64 head = queue->head;
-    i64 tail = queue->tail;
-    return (tail - head) >= (i64)queue->capacity;
-}
-
-//- thread functions 
-
-function void 
-thread_producer(void* params) {
-    
-    for (i32 i = 0; i < items_per_producer; i++) {
-        i32 value = i;
-        while (!queue_enqueue(queue, &value)) {
-            os_sleep(0);
-        }
-        atomic_i32_inc(&produced);
-    }
-    
-}
-
-function void
-thread_consumer(void* params) {
-    
-    while (true) {
-        if (consumed >= items_total) {
-            break;
-        }
-        
-        u32* value = nullptr;
-        if (queue_dequeue(queue, &(void*)value)) {
-            atomic_i32_inc(&consumed);
-        } else {
-            os_sleep(0);
-        }
-    }
-    
-}
-
 //- profile functions 
-
 
 function void 
 profile_init() {
@@ -396,8 +212,6 @@ app_init() {
     
     profile_begin("app_init");
     
-    os_sleep(5);
-    
     // create arena
     arena = arena_create(gigabytes(2));
     
@@ -407,42 +221,18 @@ app_init() {
     os_window_set_frame_function(window, app_frame);
     profile_end();
     
-    os_sleep(1);
-    
     // create graphics context
     profile_begin("graphics_create");
     context = gfx_context_create(window);
     profile_end();
     
     // create ui context
+    profile_begin("ui_create");
     ui = ui_context_create(window, context);
     ui_context_default_theme(ui);
-    
-    // queue testing
-    profile_begin("queue_create");
-    queue = queue_create(1024);
     profile_end();
     
     profile_end();
-    
-    atomic_i32_assign(&produced, 0);
-    atomic_i32_assign(&consumed, 0);
-    
-    os_handle_t producer_threads[num_threads];
-    os_handle_t consumer_threads[num_threads];
-    
-    for (i32 i = 0; i < num_threads; i++) {
-        producer_threads[i] = os_thread_create(thread_producer, nullptr);
-        consumer_threads[i] = os_thread_create(thread_consumer, nullptr);
-    }
-    
-    for (i32 i = 0; i < num_threads; i++) {
-        os_thread_join(producer_threads[i]);
-        os_thread_join(consumer_threads[i]);
-    }
-    
-    printf("produced: %u\n", produced);
-    printf("consumed: %u\n", consumed);
     
 }
 
@@ -502,6 +292,7 @@ app_entry_point(i32 argc, char** argv) {
     font_init();
     ui_init();
     profile_init();
+    task_init(4, 8);
     
     app_init();
     
@@ -512,6 +303,8 @@ app_entry_point(i32 argc, char** argv) {
     
     // release
     app_release();
+    
+    task_release();
     
     profile_release();
     ui_release();

@@ -220,10 +220,10 @@ typedef bool b8;
 
 typedef const char* cstr;
 
-typedef volatile uint32_t atomic_u32;
 typedef volatile int32_t atomic_i32;
-typedef volatile uint64_t atomic_u64;
 typedef volatile int64_t atomic_i64;
+typedef volatile uint32_t atomic_u32;
+typedef volatile uint64_t atomic_u64;
 typedef volatile void* atomic_ptr;
 
 //~ atmomics

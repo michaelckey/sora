@@ -38,6 +38,7 @@ enum gfx_buffer_type {
 	gfx_buffer_type_vertex,
 	gfx_buffer_type_index,
 	gfx_buffer_type_constant,
+    gfx_buffer_type_structured,
 };
 
 // texture
@@ -180,6 +181,7 @@ struct gfx_buffer_desc_t {
 	gfx_buffer_type type;
 	u32 size;
 	gfx_usage usage;
+    u32 stride;
 };
 
 // textures
@@ -197,6 +199,7 @@ struct gfx_texture_desc_t {
 struct gfx_shader_desc_t {
 	str_t name;
 	str_t filepath;
+    str_t entry_point;
 	gfx_shader_flags flags;
     u64 last_write_time;
 };
@@ -536,7 +539,7 @@ function void gfx_texture_blit(gfx_handle_t texture_dst, gfx_handle_t texture_sr
 function gfx_handle_t gfx_shader_create_ex(gfx_shader_desc_t shader_desc);
 function gfx_handle_t gfx_shader_create(str_t name, gfx_shader_flags flags);
 function void gfx_shader_release(gfx_handle_t shader);
-function void gfx_shader_compile(gfx_handle_t shader, str_t src);
+function b8   gfx_shader_compile(gfx_handle_t shader, str_t src);
 function void gfx_shader_set_binary(gfx_handle_t shader, void* binary, u32 binary_size);
 function void gfx_shader_get_binary(gfx_handle_t handle, void** out_binary, u32* out_binary_size);
 

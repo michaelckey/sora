@@ -10,56 +10,48 @@
 
 //- structs 
 
-struct profile_entry_t {
+struct profile_slot_t {
     cstr name;
-    u64 cycles;
-    u32 hit_count;
+    i32 depth;
+    u64 start;
+    u64 end;
 };
-
-struct profile_scope_t {
-    cstr name;
-    u64 start_time;
-};
-
-struct thread_profiler_t {
-    
-    arena_t* arena;
-    
-    profile_entry_t* entries;
-    u32 entry_count;
-    
-    profile_scope_t* scopes;
-    u32 scope_count;
-    
-}
 
 struct profiler_t {
     arena_t* arena;
     
-    queue_t* entry_queue;
+    profile_slot_t* slots;
+    u32 slot_count;
+    
+    u32 slot_indices[512];
+    u32 top_slot_index;
+    
+    u32 current_depth;
     
     u64 cpu_freq;
 };
 
+struct profile_graph_draw_data_t {
+    f64 start_ms;
+    f64 current_start_ms;
+    f64 current_end_ms;
+};
 
 //- globals 
 
 global profiler_t profiler;
-thread_global thread_profiler_t thread_profiler;
 
 //- functions 
 
 function void profile_init();
 function void profile_release();
-function void profile_clear();
-function void profile_begin_frame();
-function void profile_end_frame();
 
-function void profile_begin(const char* name);
+function void profile_begin(cstr name);
 function void profile_end();
 
-// internal
-
-function i32 _profile_qsort_compare_entries(const void* a, const void* b);
+// ui
+function void ui_profile_graph(str_t label);
+function void ui_profile_graph_draw(ui_node_t* node);
+function void ui_profile_slot_draw(ui_node_t* node);
 
 #endif // PROFILE_H

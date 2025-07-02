@@ -1043,6 +1043,11 @@ wrap(f32 v, f32 min, f32 max) {
 	return v;
 }
 
+inlnfunc f32
+sign(f32 v) {
+    return (v > 0.0f) - (v < 0.0f);
+}
+
 //- vec2 
 
 inlnfunc vec2_t
@@ -1398,6 +1403,12 @@ inlnfunc b8
 ivec3_equals(ivec3_t a, ivec3_t b) {
 	return a.x == b.x && a.y == b.y && a.z == b.z;
 }
+
+inlnfunc ivec3_t
+ivec3_add(ivec3_t a, ivec3_t b) {
+    return { a.x + b.x, a.y + b.y, a.z + b.z };
+}
+
 
 //- uvec3
 inlnfunc uvec3_t 
@@ -2644,16 +2655,14 @@ color_blend(color_t src, color_t dst, color_blend_mode mode) {
     
 }
 
-inlnfunc u32 
-color_to_hex(color_t color) {
-	u32 hex = 0;
-	hex |= ((u32)(color.r * 255.0f) & 0xFF) << 24;
-	hex |= ((u32)(color.g * 255.0f) & 0xFF) << 16;
-	hex |= ((u32)(color.b * 255.0f) & 0xFF) << 8;
-	hex |= ((u32)(color.a * 255.0f) & 0xFF);
-	return hex;
+inlnfunc u32
+color_to_hex(color_t c) {
+    u32 r = (u32)(c.r * 255.0f);
+    u32 g = (u32)(c.g * 255.0f);
+    u32 b = (u32)(c.b * 255.0f);
+    u32 a = (u32)(c.a * 255.0f);
+    return (a << 24) | (b << 16) | (g << 8) | r;
 }
-
 //- complex 
 
 inlnfunc complex_t

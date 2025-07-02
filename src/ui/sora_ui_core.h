@@ -322,43 +322,44 @@ enum {
     
     ui_hovered = (1 << 1),
     ui_mouse_over = (1 << 2),
+    ui_mouse_scrolled = (1 << 3),
     
-    ui_left_pressed = (1 << 3),
-    ui_middle_pressed = (1 << 4),
-    ui_right_pressed = (1 << 5),
+    ui_left_pressed = (1 << 4),
+    ui_middle_pressed = (1 << 5),
+    ui_right_pressed = (1 << 6),
     
-    ui_left_released = (1 << 6),
-    ui_middle_released = (1 << 7),
-    ui_right_released = (1 << 8),
+    ui_left_released = (1 << 7),
+    ui_middle_released = (1 << 8),
+    ui_right_released = (1 << 9),
     
-    ui_left_clicked = (1 << 9),
-    ui_middle_clicked = (1 << 10),
-    ui_right_clicked = (1 << 11),
+    ui_left_clicked = (1 << 10),
+    ui_middle_clicked = (1 << 11),
+    ui_right_clicked = (1 << 12),
     
-    ui_left_double_clicked = (1 << 12),
-    ui_middle_double_clicked = (1 << 13),
-    ui_right_double_clicked = (1 << 14),
+    ui_left_double_clicked = (1 << 13),
+    ui_middle_double_clicked = (1 << 14),
+    ui_right_double_clicked = (1 << 15),
     
-    ui_left_triple_clicked = (1 << 15),
-    ui_middle_triple_clicked = (1 << 16),
-    ui_right_triple_clicked = (1 << 17),
+    ui_left_triple_clicked = (1 << 16),
+    ui_middle_triple_clicked = (1 << 17),
+    ui_right_triple_clicked = (1 << 18),
     
-    ui_left_dragging = (1 << 18),
-    ui_middle_dragging = (1 << 19),
-    ui_right_dragging = (1 << 20),
+    ui_left_dragging = (1 << 19),
+    ui_middle_dragging = (1 << 20),
+    ui_right_dragging = (1 << 21),
     
-    ui_left_double_dragging = (1 << 21),
-    ui_middle_double_dragging = (1 << 22),
-    ui_right_double_dragging = (1 << 23),
+    ui_left_double_dragging = (1 << 22),
+    ui_middle_double_dragging = (1 << 23),
+    ui_right_double_dragging = (1 << 24),
     
-    ui_left_triple_dragging = (1 << 24),
-    ui_middle_triple_dragging = (1 << 25),
-    ui_right_triple_dragging = (1 << 26),
+    ui_left_triple_dragging = (1 << 25),
+    ui_middle_triple_dragging = (1 << 26),
+    ui_right_triple_dragging = (1 << 27),
     
     // TODO: unsure about keyboard interactions.
-    ui_keyboard_pressed = (1 << 27),
-    ui_keyboard_released = (1 << 28),
-    ui_keyboard_clicked = (1 << 29),
+    ui_keyboard_pressed = (1 << 28),
+    ui_keyboard_released = (1 << 29),
+    ui_keyboard_clicked = (1 << 30),
     
 };
 
@@ -531,9 +532,9 @@ struct ui_node_list_t {
 //- animation 
 
 struct ui_anim_params_t {
-    f32 initial;
-    f32 target;
-    f32 rate;
+    f64 initial;
+    f64 target;
+    f64 rate;
 };
 
 struct ui_anim_node_t {
@@ -549,7 +550,7 @@ struct ui_anim_node_t {
     ui_key_t key;
     ui_anim_params_t params;
     
-    f32 current;
+    f64 current;
 };
 
 struct ui_anim_hash_list_t {
@@ -912,14 +913,16 @@ function ui_text_op_t ui_single_line_text_op_from_event(arena_t *arena, ui_event
 function void ui_event_push(ui_event_t* event);
 function void ui_event_pop(ui_event_t* event);
 
+function f32 ui_mouse_scroll();
+
 //- keybinding
 function void ui_key_binding_add(os_key key, os_modifiers modifiers, ui_event_type result_type, ui_event_flags result_flags, ui_event_delta_unit result_delta_unit, ivec2_t result_delta);
 function ui_key_binding_t* ui_key_binding_find(os_key key, os_modifiers modifiers);
 
 //- animation
-function ui_anim_params_t ui_anim_params_create(f32 initial, f32 target, f32 rate = ui_active_context->anim_fast_rate);
-function f32 ui_anim_ex(ui_key_t key, ui_anim_params_t params);
-function f32 ui_anim(ui_key_t key, f32 initial, f32 target, f32 rate = ui_active_context->anim_fast_rate);
+function ui_anim_params_t ui_anim_params_create(f64 initial, f64 target, f64 rate = ui_active_context->anim_fast_rate);
+function f64 ui_anim_ex(ui_key_t key, ui_anim_params_t params);
+function f64 ui_anim(ui_key_t key, f64 initial, f64 target, f64 rate = ui_active_context->anim_fast_rate);
 
 //- data 
 function void* ui_data(ui_key_t key, ui_data_type type, void* initial);
@@ -966,8 +969,8 @@ function u32 ui_r_get_texture_index(gfx_handle_t texture);
 function u32 ui_r_get_clip_mask_index(rect_t rect);
 function u32 ui_r_get_color_index(color_t color);
 
+function void ui_r_instance_set_texture(ui_r_instance_t* instance, gfx_handle_t texture);
 function void ui_r_instance_set_color(ui_r_instance_t* instance, color_t col);
-function void ui_r_instance_set_colors(ui_r_instance_t* instance, color_t col0, color_t col1, color_t col2, color_t col3);
 
 function ui_r_instance_t* ui_r_draw_rect(rect_t rect, f32 thickess, f32 softness, vec4_t rounding);
 function ui_r_instance_t* ui_r_draw_line(vec2_t p0, vec2_t p1, f32 thickness, f32 softness);

@@ -374,10 +374,14 @@ ui_end(ui_context_t* context) {
             
             // draw main background
             ui_r_set_next_color(color_background);
-            ui_r_draw_rect(node->rect, 0.0f, 0.33f, node->rounding);
+            ui_r_instance_t* instance = ui_r_draw_rect(node->rect, 0.0f, 0.33f, node->rounding);
+            if (!gfx_handle_equals(node->texture, { 0 })) {
+                ui_r_instance_set_color(instance, color(0xffffffff));
+                ui_r_instance_set_texture(instance, node->texture);
+            }
             
             // draw effects
-            if (node->flags & ui_flag_draw_hover_effects | ui_flag_draw_active_effects) {
+            if (node->flags & (ui_flag_draw_hover_effects | ui_flag_draw_active_effects)) {
                 f32 height = rect_height(node->rect);
                 f32 weight = 0.35f;
                 
@@ -656,6 +660,7 @@ ui_context_default_theme(ui_context_t* context) {
     ui_context_set_color(context, str("hover"), color(0xe7f1ff25));
     ui_context_set_color(context, str("active"), color(0xe7f1ff25));
     ui_context_set_color(context, str("border"), color(0x343839ff));
+    ui_context_set_color(context, str("border alt"), color(0x27282bff));
     ui_context_set_color(context, str("border shadow"), color(0x00000080));
     ui_context_set_color(context, str("text"), color(0xe2e2e3ff));
     ui_context_set_color(context, str("text shadow"), color(0x00000080));
@@ -1083,6 +1088,17 @@ ui_event_pop(ui_event_t* event) {
     dll_remove(ui_active_context->event_list.first, ui_active_context->event_list.last, event);
 }
 
+function f32 
+ui_mouse_scroll() {
+    f32 result = 0.0f;
+    for (ui_event_t* e = ui_active_context->event_list.first; e != nullptr; e = e->next) {
+        if (e->type == ui_event_type_mouse_scroll) {
+            result = e->os_event->scroll.y;
+        }
+    }
+    return result;
+}
+
 //- key binding functions 
 
 function void 
@@ -1123,11 +1139,11 @@ ui_key_binding_find(os_key key, os_modifiers modifiers) {
 //- animation functions
 
 function ui_anim_params_t 
-ui_anim_params_create(f32 initial, f32 target, f32 rate) {
+ui_anim_params_create(f64 initial, f64 target, f64 rate) {
     return { initial, target, rate };
 }
 
-function f32 
+function f64 
 ui_anim_ex(ui_key_t key, ui_anim_params_t params) {
     
     // get context
@@ -1174,15 +1190,15 @@ ui_anim_ex(ui_key_t key, ui_anim_params_t params) {
     dll_push_back_np(context->anim_node_lru, context->anim_node_mru, node, lru_next, lru_prev);
     node->params = params;
     
-    if (node->params.rate == 1.0f) {
+    if (node->params.rate == 1.0) {
         node->current = node->params.target;
     }
     
     return node->current;
 }
 
-function f32 
-ui_anim(ui_key_t key, f32 initial, f32 target, f32 rate) {
+function f64
+ui_anim(ui_key_t key, f64 initial, f64 target, f64 rate) {
     ui_anim_params_t params = { 0 };
 	params.initial = initial;
 	params.target = target;
@@ -2074,6 +2090,8 @@ ui_interaction_from_node(ui_node_t* node) {
             // mouse scroll event
             if (event->type == ui_event_type_mouse_scroll  && mouse_in_bounds) {
                 
+                result |= (ui_mouse_scrolled);
+                
                 // scrollable
                 if (node->flags & ui_flag_scrollable) {
                     vec2_t scroll = os_event->scroll;
@@ -2290,6 +2308,14 @@ ui_r_get_color_index(color_t col) {
 function void
 ui_r_instance_set_texture(ui_r_instance_t* instance, gfx_handle_t texture) {
     instance->texture_index = ui_r_get_texture_index(texture);
+}
+
+function void
+ui_r_instance_set_color(ui_r_instance_t* instance, color_t col) {
+    instance->color_index_0 = ui_r_get_color_index(col);
+    instance->color_index_1 = ui_r_get_color_index(col);
+    instance->color_index_2 = ui_r_get_color_index(col);
+    instance->color_index_3 = ui_r_get_color_index(col);
 }
 
 function ui_r_instance_t* 

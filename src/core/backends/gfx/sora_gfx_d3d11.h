@@ -27,6 +27,8 @@ os_abort(1);\
 struct gfx_d3d11_buffer_t {
     gfx_buffer_desc_t desc;
 	ID3D11Buffer* id;
+    ID3D11ShaderResourceView* srv;
+    ID3D11UnorderedAccessView* uav;
 };
 
 // texture

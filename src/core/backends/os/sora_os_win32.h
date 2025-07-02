@@ -66,11 +66,7 @@ struct os_w32_entity_t {
 		CONDITION_VARIABLE cv;
         
         // fiber
-        struct {
-            void* params;
-            os_fiber_function_t* func;
-            void* fiber_id;
-        } fiber;
+        LPVOID fiber;
         
         // file iter
         struct {

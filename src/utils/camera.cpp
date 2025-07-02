@@ -6,10 +6,10 @@
 function camera_t*
 camera_create(arena_t* arena, camera_mode mode, f32 fov, f32 z_near, f32 z_far) {
     
-    camera_t* camera = (camera_t*)arena_alloc(arena, sizeof(camera_t));
+    camera_t* camera = (camera_t*)arena_calloc(arena, sizeof(camera_t));
     
     camera->mode = mode;
-    camera->target_position = vec3(5.0f, 2.5f, 5.0f);
+    camera->target_position = vec3(0.0f, 0.0f, 0.0f);
     camera->position = camera->target_position;
     
     camera->target_orientation = quat_look_at(camera->position, vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
@@ -19,9 +19,14 @@ camera_create(arena_t* arena, camera_mode mode, f32 fov, f32 z_near, f32 z_far) 
     camera->fov = fov;
     camera->z_near = z_near;
     camera->z_far = z_far;
-    camera->speed = 1.0f;
     
     return camera;
+}
+
+function void
+camera_look_at(camera_t* camera, vec3_t from, vec3_t to) {
+    camera->target_position = from;
+    camera->target_orientation = quat_look_at(camera->target_position, to, vec3(0.0f, 1.0f, 0.0f));
 }
 
 function void 
@@ -38,7 +43,6 @@ camera_free_mode_input(camera_t* camera, os_handle_t window) {
     f32 pitch_input = 0.0f;
     f32 yaw_input = 0.0f;
     f32 target_speed = 0.5f;
-    f32 speed = 0.5f;
     
     // only get input if window is focused
     if (os_window_is_active(window)) {
@@ -46,7 +50,6 @@ camera_free_mode_input(camera_t* camera, os_handle_t window) {
         right_input = (f32)(os_key_is_down(os_key_D) - os_key_is_down(os_key_A));
         up_input = (f32)(os_key_is_down(os_key_space) - os_key_is_down(os_key_ctrl));
         roll_input = (f32)(os_key_is_down(os_key_E) - os_key_is_down(os_key_Q));
-        speed = os_key_is_down(os_key_shift) ? 10.0f : 2.5f;
     }
     
     persist vec2_t mouse_start;
@@ -71,9 +74,9 @@ camera_free_mode_input(camera_t* camera, os_handle_t window) {
     
     //speed
     if (os_key_is_down(os_key_shift)) {
-        camera->target_speed = 5.0f;
+        camera->target_speed = 15.0f;
     } else {
-        camera->target_speed = 0.5f;
+        camera->target_speed = 5.0f;
     }
     
     // fov

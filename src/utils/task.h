@@ -47,6 +47,7 @@ struct task_sleeping_fiber_t {
 struct task_state_t {
     
     arena_t* arena;
+    arena_t* queue_arena;
     
     u32 worker_thread_count;
     os_handle_t* worker_threads;
@@ -62,36 +63,28 @@ struct task_state_t {
     atomic_i64* counters;
     
     // queues
-    
-    // task queue - holds the tasks needing to be executed.
-    // free_task_queue - holds the unused task indices.
-    // sleeping_fiber_queue - holds the currently sleeping fiber indices. 
-    // free_fiber_pool - holds the unused fibers indices.
-    // free_counter_pool - holds the unused counters indices. 
-    
-    task_queue_t* task_queue;
-    task_queue_t* free_task_queue;
-    task_queue_t* sleeping_fiber_queue;
-    task_queue_t* free_fiber_queue;
-    task_queue_t* free_counter_queue;
+    task_queue_t task_queue;
+    task_queue_t free_task_queue;
+    task_queue_t sleeping_fiber_queue;
+    task_queue_t free_sleeping_fiber_queue;
+    task_queue_t free_fiber_queue;
+    task_queue_t free_counter_queue;
     
     atomic_i64 state;
     
 };
 
 global task_state_t task_state;
-thread_global os_handle_t task_current_thread = { 0 };
+thread_global os_handle_t task_current_thread_fiber = { 0 };
 thread_global i64 task_current_fiber_index = -1;
-
-
 
 //~ functions 
 
 function void task_init(u32 worker_thread_count, u32 fiber_count);
 function void task_release();
 
-function atomic_i64* task_run(task_desc_t* descs, u32 count);
-function void task_wait_for_counter(atomic_i64* counter, u32 value);
+function atomic_i64* task_run(task_desc_t* descs, i64 count);
+function void task_wait_for_counter(atomic_i64* counter, i64 value);
 
 // internal
 

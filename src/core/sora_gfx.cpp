@@ -100,13 +100,16 @@ gfx_shader_load(str_t filepath, gfx_shader_flags flags) {
     str_t name = str_get_file_name(filepath);
     
 #if 1
-    gfx_shader_desc_t desc = {
-        name, filepath, flags, 0
-    };
+    gfx_shader_desc_t desc;
+    desc.name = name;
+    desc.filepath = filepath;
+    desc.flags = flags;
+    desc.entry_point = { 0 };
+    
     gfx_handle_t shader = gfx_shader_create_ex(desc);
     
     str_t data = os_file_read_all(scratch.arena, filepath);
-    gfx_shader_compile(shader, data);
+    b8 compiled = gfx_shader_compile(shader, data);
     
 #else
     
@@ -142,11 +145,43 @@ gfx_shader_load(str_t filepath, gfx_shader_flags flags) {
     
 #endif
     
+    if (!compiled) {
+        gfx_shader_release(shader);
+        shader = { 0 };
+    }
+    
     scratch_end(scratch);
     
     return shader;
 }
 
+function gfx_handle_t
+gfx_compute_shader_load(str_t filepath, str_t entry_point) {
+    
+    temp_t scratch = scratch_begin();
+    
+    str_t name = str_get_file_name(filepath);
+    
+    gfx_shader_desc_t desc;
+    desc.name = name;
+    desc.filepath = filepath;
+    desc.flags = gfx_shader_flag_compute;
+    desc.entry_point = entry_point;
+    
+    gfx_handle_t shader = gfx_shader_create_ex(desc);
+    
+    str_t data = os_file_read_all(scratch.arena, filepath);
+    b8 compiled = gfx_shader_compile(shader, data);
+    
+    if (!compiled) {
+        gfx_shader_release(shader);
+        shader = { 0 };
+    }
+    
+    scratch_end(scratch);
+    
+    return shader;
+}
 
 //- render graph functions
 //

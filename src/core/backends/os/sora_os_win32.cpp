@@ -1022,7 +1022,7 @@ function os_handle_t
 os_fiber_create(u32 stack_size, os_fiber_function_t* fiber_func, void* params) {
     os_w32_entity_t* entity = os_w32_entity_create(os_w32_entity_type_fiber);
     
-    entity->fiber.fiber_id = CreateFiber(stack_size, (LPFIBER_START_ROUTINE)fiber_func, params);
+    entity->fiber = CreateFiber(stack_size, (LPFIBER_START_ROUTINE)fiber_func, params);
     
     os_handle_t handle = { (u64)entity };
     return handle;
@@ -1031,20 +1031,20 @@ os_fiber_create(u32 stack_size, os_fiber_function_t* fiber_func, void* params) {
 function void
 os_fiber_release(os_handle_t fiber) {
     os_w32_entity_t* entity = (os_w32_entity_t*)(fiber.data[0]);
-    DeleteFiber(entity->fiber.fiber_id);
+    DeleteFiber(entity->fiber);
     os_w32_entity_release(entity);
 }
 
 function void
 os_fiber_switch(os_handle_t fiber) {
     os_w32_entity_t* entity = (os_w32_entity_t*)(fiber.data[0]);
-    SwitchToFiber(entity->fiber.fiber_id);
+    SwitchToFiber(entity->fiber);
 }
 
 function os_handle_t
 os_fiber_from_thread() {
     os_w32_entity_t* entity = os_w32_entity_create(os_w32_entity_type_fiber);
-    entity->fiber.fiber_id = ConvertThreadToFiber(nullptr);
+    entity->fiber = ConvertThreadToFiber(nullptr);
     os_handle_t handle = { (u64)entity };
     return handle;
 }

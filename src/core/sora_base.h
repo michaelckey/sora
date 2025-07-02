@@ -28,32 +28,33 @@
 // arena backend support:
 //        |  libc  | win32 | mmap |
 // win32: |   X    |   X   |      |
-// macos: |   X    |       |  X   |
-// linux: |   X    |       |  X   |
+// macos: |   *    |       |  *   |
+// linux: |   *    |       |  *   |
 //
 // gfx backend support:
 //        | d3d11 | d3d12 | opengl | vulkan | metal |
-// win32: |   X   |   X   |   X    |   X    |       |
-// macos: |       |       |   X    |   X    |   X   |
-// linux: |       |       |   X    |   X    |       |
+// win32: |   X   |   *   |   *    |   *    |       |
+// macos: |       |       |   *    |   *    |   *   |
+// linux: |       |       |   *    |   *    |       |
 //
 // audio backend support:
 //
 //        | wasapi | coreaudio | ALSA |
 // win32: |   X    |           |      |
-// macos: |        |     X     |      | 
-// linux: |        |           |   X  |
+// macos: |        |     *     |      | 
+// linux: |        |           |   *  |
 //
 // font backend support:
 //
 //        | dwrite | coretext | freetype |
-// win32: |   X    |          |    X     |
-// macos: |        |     X    |    X     | 
-// linux: |        |          |    X     |
+// win32: |   X    |          |    *     |
+// macos: |        |     *    |    *     | 
+// linux: |        |          |    *     |
+//
+// * - planned to support.
 //
 
-
-//~ compiler context
+//~ compiler context cracking
 
 #if defined(__clang__)
 #    define COMPILER_CLANG 1
@@ -63,7 +64,7 @@
 #    define COMPILER_GCC 1
 #endif
 
-//~ os context
+//~ os context cracking
 
 #if defined(_WIN32)
 #    define OS_BACKEND_WIN32 1
@@ -746,6 +747,7 @@ inlnfunc f32 degrees(f32 rad);
 inlnfunc f32 remap(f32 value, f32 from_min, f32 from_max, f32 to_min, f32 to_max);
 inlnfunc f32 lerp(f32 a, f32 b, f32 t);
 inlnfunc f32 wrap(f32 v, f32 min, f32 max);
+inlnfunc f32 sign(f32 v);
 
 //- vec2 
 inlnfunc vec2_t vec2(f32);
@@ -809,6 +811,7 @@ inlnfunc vec3_t vec3_clamp(vec3_t, f32, f32);
 inlnfunc ivec3_t ivec3(i32);
 inlnfunc ivec3_t ivec3(i32, i32, i32);
 inlnfunc b8      ivec3_equals(ivec3_t, ivec3_t);
+inlnfunc ivec3_t ivec3_add(ivec3_t a, ivec3_t b);
 
 //- uvec3
 inlnfunc uvec3_t uvec3(u32);

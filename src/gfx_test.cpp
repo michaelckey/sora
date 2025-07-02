@@ -24,6 +24,7 @@ function void app_frame();
 function void
 app_init() {
     
+    
 }
 
 function void

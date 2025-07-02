@@ -237,10 +237,27 @@ enum os_event_type {
 
 //~ structs 
 
-// handle
-struct os_handle_t {
-    u64 data[1];
-};
+// handles
+
+struct os_window_t { u64 id; };
+
+struct os_file_t { u64 id; };
+struct os_file_iter_t { u64 id; } // TODO: implement this 
+
+struct os_process_t { u64 id; } // TODO: implement this
+struct os_pipe_t { u64 id; } // TODO: implement this 
+
+struct os_thread_t { u64 id; };
+struct os_fiber_t { u64 id; };
+struct os_mutex_t { u64 id; };
+struct os_rw_mutex_t { u64 id; };
+struct os_condition_variable_t { u64 id; };
+struct os_semaphore_t { u64 id; }; // TODO: implement this
+
+struct os_timer_t { u64 id; } // TODO: implement this 
+
+// NOTE: this will be implemented when I get to networking. 
+struct os_socket_t { u64 id; } // TODO: implement this 
 
 // events
 struct os_event_t {

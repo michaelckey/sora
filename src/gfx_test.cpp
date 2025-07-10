@@ -11,7 +11,6 @@
 //~ globals
 
 global arena_t* arena;
-global os_handle_t window;
 
 //~ functions
 

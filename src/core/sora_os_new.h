@@ -242,10 +242,10 @@ enum os_event_type {
 struct os_window_t { u64 id; };
 
 struct os_file_t { u64 id; };
-struct os_file_iter_t { u64 id; } // TODO: implement this 
+struct os_file_iter_t { u64 id; };
 
-struct os_process_t { u64 id; } // TODO: implement this
-struct os_pipe_t { u64 id; } // TODO: implement this 
+struct os_process_t { u64 id; }; // TODO: implement this
+struct os_pipe_t { u64 id; }; // TODO: implement this 
 
 struct os_thread_t { u64 id; };
 struct os_fiber_t { u64 id; };
@@ -254,10 +254,10 @@ struct os_rw_mutex_t { u64 id; };
 struct os_condition_variable_t { u64 id; };
 struct os_semaphore_t { u64 id; }; // TODO: implement this
 
-struct os_timer_t { u64 id; } // TODO: implement this 
+struct os_timer_t { u64 id; }; // TODO: implement this 
 
 // NOTE: this will be implemented when I get to networking. 
-struct os_socket_t { u64 id; } // TODO: implement this 
+struct os_socket_t { u64 id; }; // TODO: implement this 
 
 // events
 struct os_event_t {
@@ -271,7 +271,7 @@ struct os_event_t {
     os_modifier modifiers;
     
     // window events
-    os_handle_t window;
+    os_window_t window;
     uvec2_t window_position;
     uvec2_t window_size;
     
@@ -285,12 +285,6 @@ struct os_event_t {
     vec2_t mouse_position; 
     vec2_t mouse_scroll;
     
-};
-
-struct os_event_list_t {
-    os_event_t* first;
-    os_event_t* last;
-    u32 count;
 };
 
 struct os_system_info_t {
@@ -323,10 +317,18 @@ struct os_core_state_t {
     
     // events
     arena_t* events_arena;
-    os_event_list_t events;
+    os_event_t* event_first;
+    os_event_t* event_last;
+    os_event_t* event_free;
     
+    // info
     os_system_info_t system_info;
     os_process_info_t process_info;
+    
+    // input state
+    b8 keys[os_key_count];
+    b8 mouse_buttons[os_mouse_button_count];
+    b8 gamepad_buttons[os_gamepad_button_count];
     
 };
 
@@ -339,7 +341,7 @@ global os_core_state_t os_core_state;
 // state (implemented per backend)
 function void os_init();
 function void os_release();
-function void os_poll_events(); // NOTE: clears event_list before polling.
+function void os_poll_events(); // NOTE: clears event list before polling.
 function void os_abort(u32 exit_code);
 function void os_sleep(u32 ms);
 
@@ -350,53 +352,52 @@ function u64 os_get_time_ms();
 function u64 os_get_time_freq();
 
 // handles (implemented once)
-function b8 os_handle_equals(os_handle_t handle_a, os_handle_t handle_b);
+function b8 os_window_equals(os_window_t window_a, os_window_t window_b);
 
 // events (implemented once)
-function void os_events_clear();
-function void os_events_push(os_event_t* event);
-function os_event_t* os_events_pop(os_event_t* event);
-function os_event_t* os_events_find(os_handle_t window, os_event_type type);
-function b8 os_key_press(os_handle_t window, os_key key, os_modifier modifiers);
-function b8 os_key_release(os_handle_t window, os_key key, os_modifier modifiers);
-function b8 os_key_is_down(os_handle_t window, os_key key);
-function b8 os_mouse_press(os_handle_t window, os_key key, os_modifier modifiers = 0);
-function b8 os_mouse_release(os_handle_t window, os_key key, os_modifier modifiers = 0);
-function b8 os_mouse_scroll(os_handle_t window, os_key key, os_modifier modifiers = 0);
+function os_event_t* os_event_create(os_event_type type);
+function void        os_event_release(os_event_t* event);
+function void        os_events_push(os_event_t* event);
+function os_event_t* os_events_pop();
+function void        os_events_remove(os_event_t* event);
+function os_event_t* os_events_find(os_window_t window, os_event_type type);
+function void        os_events_clear();
+
+function b8 os_key_press(os_window_t window, os_key key, os_modifier modifiers = 0);
+function b8 os_key_release(os_window_t window, os_key key, os_modifier modifiers = 0);
+function b8 os_key_is_down(os_window_t window, os_key key);
+function b8 os_mouse_press(os_window_t window, os_mouse_button mouse, os_modifier modifiers = 0);
+function b8 os_mouse_release(os_window_t window, os_mouse_button mouse, os_modifier modifiers = 0);
+function b8 os_mouse_scroll(os_window_t window, os_mouse_button mouse, os_modifier modifiers = 0);
+function b8 os_mouse_is_down(os_window_t window, os_mouse_button mouse);
 
 // windows (implemented per backend) 
-function os_handle_t os_window_open();
-function void os_window_close(os_handle_t window);
+function os_window_t os_window_open();
+function void os_window_close(os_window_t window);
 
-function b8 os_window_is_focused(os_handle_t window);
-function void os_window_set_focus(os_handle_t window, b8 focus);
-function b8 os_window_is_minimized(os_handle_t window);
-function void os_window_set_minimize(os_handle_t window, b8 minimize);
-function b8 os_window_is_maxmized(os_handle_t window);
-function void os_window_set_maxmimize(os_handle_t window, b8 maximize);
-function b8 os_window_is_fullscnreen(os_handle_t window);
-function void os_window_set_fullscreen(os_handle_t window, b8 fullscreen);
+function b8 os_window_is_focused(os_window_t window);
+function void os_window_set_focus(os_window_t window, b8 focus);
+function b8 os_window_is_minimized(os_window_t window);
+function void os_window_set_minimize(os_window_t window, b8 minimize);
+function b8 os_window_is_maxmized(os_window_t window);
+function void os_window_set_maxmimize(os_window_t window, b8 maximize);
+function b8 os_window_is_fullscnreen(os_window_t window);
+function void os_window_set_fullscreen(os_window_t window, b8 fullscreen);
 
-function void os_window_set_title(os_handle_t window, str_t title);
+function void os_window_set_title(os_window_t window, str_t title);
 
 // files (implemented per backend)
-function os_handle_t os_file_open();
-function void os_file_close(os_handle_t file);
-
+//function os_handle_t os_file_open();
+//function void os_file_close(os_handle_t file);
 
 // file info
 //function os_file_info_t os_file_get_info(os_handle_t file);
 //function os_file_info_t os_file_get_info(str_t filepath);
 
+//~ internal functions (implemented once) 
 
-//~ internal functions 
-
-// core state (implemented once)
+// core state
 function void _os_init_core();
 function void _os_release_core();
-
-// events
-function os_event_t* _os_event_alloc(os_event_type type);
-
 
 #endif // SORA_OS_H

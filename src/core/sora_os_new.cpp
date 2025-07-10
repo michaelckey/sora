@@ -8,37 +8,52 @@
 //- handle functions  
 
 function b8 
-os_handle_equals(os_handle_t handle_a, os_handle_t handle_b) {
-    return (handle_a.data[0] == handle_b.data[0]);
+os_window_equals(os_window_t window_a, os_window_t window_b) {
+    return (window_a.id == window_b.id);
 }
 
 //- events functions 
 
-function void 
-os_events_clear() {
-    arena_clear(os_core_state.events_arena);
-    os_core_state.events.first = nullptr;
-    os_core_state.events.last= nullptr;
-    os_core_state.events.count = 0;
+function os_event_t* 
+os_event_create(os_event_type type) {
+    os_event_t* event = os_core_state.event_free;
+    if (event != nullptr) {
+        stack_pop(os_core_state.event_free);
+    } else {
+        event = (os_event_t*)arena_alloc(os_core_state.events_arena, sizeof(os_event_t));
+    }
+    memset(event, 0, sizeof(os_event_t));
+    event->type = type;
+    return event;
+}
+
+function void
+os_event_release(os_event_t* event) {
+    stack_push(os_core_state.event_free, event);
 }
 
 function void
 os_events_push(os_event_t* event) {
-    dll_push_back(os_core_state.events.first, os_core_state.events.last, event);
-    os_core_state.events.count++;
+    dll_push_back(os_core_state.event_first, os_core_state.event_last, event);
 }
 
 function os_event_t*
-os_events_pop(os_event_t* event) {
-    dll_remove(os_core_state.events.first, os_core_state.events.last, event);
-    os_core_state.events.count--;
+os_events_pop() {
+    os_event_t* event = os_core_state.event_last;
+    dll_remove(os_core_state.event_first, os_core_state.event_last, os_core_state.event_last);
+    return event;
+}
+
+function void
+os_events_remove(os_event_t* event) {
+    dll_remove(os_core_state.event_first, os_core_state.event_last, event);
 }
 
 function os_event_t*
-os_events_find(os_handle_t window, os_event_type event_type) {
+os_events_find(os_window_t window, os_event_type event_type) {
     os_event_t* result = nullptr;
-    for (os_event_t* event = os_core_state.events.first; event != nullptr; event = event->next) {
-        if (os_handle_equals(window, event->window) && event->type == event_type) {
+    for (os_event_t* event = os_core_state.event_first; event != nullptr; event = event->next) {
+        if (os_window_equals(window, event->window) && event->type == event_type) {
             result = event;
             break;
         }
@@ -46,14 +61,22 @@ os_events_find(os_handle_t window, os_event_type event_type) {
     return result;
 }
 
+function void 
+os_events_clear() {
+    arena_clear(os_core_state.events_arena);
+    os_core_state.event_first = nullptr;
+    os_core_state.event_last= nullptr;
+}
+
+
 function b8
-os_key_press(os_handle_t window, os_key key, os_modifier modifiers) {
+os_key_press(os_window_t window, os_key key, os_modifier modifiers) {
     b8 result = false;
-    for (os_event_t* event = os_core_state.events.first; event != nullptr; event = event->next) {
-        if (os_handle_equals(window, event->window) && (event->type = os_event_key_press) && 
+    for (os_event_t* event = os_core_state.event_first; event != nullptr; event = event->next) {
+        if (os_window_equals(window, event->window) && (event->type = os_event_key_press) && 
             (event->key == key) && (event->modifiers & modifiers)) {
             result = true;
-            os_events_pop(event);
+            os_events_remove(event);
             break;
         }
     }
@@ -61,18 +84,30 @@ os_key_press(os_handle_t window, os_key key, os_modifier modifiers) {
 }
 
 function b8
-os_key_release(os_handle_t window, os_key key, os_modifier modifiers) {
+os_key_release(os_window_t window, os_key key, os_modifier modifiers) {
     b8 result = false;
-    for (os_event_t* event = os_core_state.events.first; event != nullptr; event = event->next) {
-        if (os_handle_equals(window, event->window) && (event->type = os_event_key_release) && 
+    for (os_event_t* event = os_core_state.event_first; event != nullptr; event = event->next) {
+        if (os_window_equals(window, event->window) && (event->type = os_event_key_release) && 
             (event->key == key) && (event->modifiers & modifiers)) {
             result = true;
-            os_events_pop(event);
+            os_events_remove(event);
             break;
         }
     }
     return result;
 }
+
+function b8
+os_key_is_down(os_window_t window, os_key key) {
+    b8 result = false;
+    if (os_window_is_focused(window)) {
+        result = os_core_state.keys[key];
+    }
+    return result;
+}
+
+
+
 
 //~ internal implementation
 
@@ -85,11 +120,9 @@ _os_init_core() {
     os_core_state.events_arena = arena_create(megabytes(1));
     
     // inits events
-    os_core_state.events.first = nullptr;
-    os_core_state.events.last = nullptr;
-    os_core_state.events.count = 0;
-    
-    
+    os_core_state.event_first = nullptr;
+    os_core_state.event_last = nullptr;
+    os_core_state.event_free = nullptr;
     
 }
 
@@ -100,10 +133,6 @@ _os_release_core() {
     arena_release(os_core_state.events_arena);
     
 }
-
-
-
-
 
 
 #endif // SORA_OS_CPP

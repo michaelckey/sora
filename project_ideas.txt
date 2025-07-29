@@ -1,0 +1,26 @@
+
+# project ideas
+
+## [C extension language]
+- transpiled to C.
+- has useful and modern syntax.
+
+## [code editor]
+- simple syntax highlighting
+- detect types, functions, etc
+- navigation more tuned to me.
+- maybe non textual? (node based)
+- console
+- commands
+
+## [space game]
+- colony game that takes place on hexagon tiled planets.
+
+## [survival game]
+- extremely hard difficulty
+- realistic survival
+
+## [static site generator for blogs]
+- parse markdown
+- generate blog pages
+- host my own resume website

@@ -31,28 +31,6 @@
 // macos: |   *    |       |  *   |
 // linux: |   *    |       |  *   |
 //
-// gfx backend support:
-//        | d3d11 | d3d12 | opengl | vulkan | metal |
-// win32: |   X   |   *   |   *    |   *    |       |
-// macos: |       |       |   *    |   *    |   *   |
-// linux: |       |       |   *    |   *    |       |
-//
-// audio backend support:
-//
-//        | wasapi | coreaudio | ALSA |
-// win32: |   X    |           |      |
-// macos: |        |     *     |      | 
-// linux: |        |           |   *  |
-//
-// font backend support:
-//
-//        | dwrite | coretext | freetype |
-// win32: |   X    |          |    *     |
-// macos: |        |     *    |    *     | 
-// linux: |        |          |    *     |
-//
-// * - planned to support.
-//
 
 //~ compiler context cracking
 
@@ -74,20 +52,22 @@
 #    define OS_BACKEND_LINUX 1
 #endif
 
-#if !defined(BASE_USE_SIMD)
-#    define BASE_USE_SIMD 1
+//~ options
+
+#if !defined(SORA_USE_SIMD)
+#    define SORA_USE_SIMD 1
 #endif 
 
 //~ includes
 
-#include <math.h> // math functions
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <stdarg.h> 
+#include <stdarg.h>
 #include <string.h>
 
-#if BASE_USE_SIMD
-#include <pmmintrin.h> // simd functions
+#if SORA_USE_SIMD
+#    include <pmmintrin.h>
 #endif 
 
 //~ defines
@@ -104,7 +84,7 @@
 #endif 
 
 //- sizes
-#define bytes(n)      (n)
+
 #define kilobytes(n)  (n << 10)
 #define megabytes(n)  (n << 20)
 #define gigabytes(n)  (((u64)n) << 30)
@@ -117,12 +97,12 @@
 //- logging 
 
 #if !defined(log_info)
-#    define log_info(s) printf("[info] %s\n", s)
-#    define log_infof(fmt, ...) printf("[info] "fmt"\n", ## __VA_ARGS__)
-#    define log_warn(s) printf("[warn] %s\n", s)
-#    define log_warnf(fmt, ...) printf("[warn] "fmt"\n", ##__VA_ARGS__)
-#    define log_error(s) printf("[error] %s\n", s)
-#    define log_errorf(fmt, ...) printf("[error] "fmt"\n", ##__VA_ARGS__)
+#    define log_info(s)
+#    define log_infof(fmt, ...)
+#    define log_warn(s)
+#    define log_warnf(fmt, ...)
+#    define log_error(s)
+#    define log_errorf(fmt, ...)
 #endif
 
 //- profiling
@@ -135,28 +115,29 @@
 #endif
 
 //- type constants
-#define u8_max  (0xff)
+
 #define u8_min  (0)
-#define u16_max (0xffff)
+#define u8_max  (0xff)
 #define u16_min (0)
-#define u32_max (0xffffffff)
+#define u16_max (0xffff)
 #define u32_min (0)
-#define u64_max (0xffffffffffffffffull)
+#define u32_max (0xffffffff)
 #define u64_min (0)
-#define i8_max ((i8)0x7f)
+#define u64_max (0xffffffffffffffffull)
 #define i8_min ((i8)0xff)
-#define i16_max ((i16)0x7fff)
+#define i8_max ((i8)0x7f)
 #define i16_min ((i16)0xffff)
-#define i32_max ((i32)0x7fffffff)
+#define i16_max ((i16)0x7fff)
 #define i32_min ((i32)0xffffffff)
-#define i64_max ((i64)0x7fffffffffffffffull)
+#define i32_max ((i32)0x7fffffff)
 #define i64_min ((i64)0xffffffffffffffffull)
+#define i64_max ((i64)0x7fffffffffffffffull)
 
 #define f32_sign (0x80000000)
-#define f32_exp (0x7F800000)
-#define f32_mantissa (0x7FFFFF)
-#define f32_max (3.402823e+38f)
+#define f32_exp (0x7f800000)
+#define f32_mantissa (0x7fffff)
 #define f32_min (-3.402823e+38f)
+#define f32_max (3.402823e+38f)
 #define f32_smallest_positive (1.1754943508e-38)
 #define f32_epsilon (5.96046448e-8)
 
@@ -167,15 +148,18 @@
 #define f64_pi (3.141592653597)
 
 //- math
+
 #define min(a, b) (((a)<(b)) ? (a) : (b))
 #define max(a, b) (((a)>(b)) ? (a) : (b))
 #define clamp(x, a, b) (((a)>(x))?(a):((b)<(x))?(b):(x))
 #define clamp_01(x) (((0)>(x))?(0):((1)<(x))?(1):(x))
 
 //- arrays
+
 #define array_count(a) (sizeof(a) / sizeof((a)[0]))
 
 //- stack
+
 #define stack_push_n(f, n, next) (((n)==0) ? 0 : ((n)->next = (f), (f) = (n)))
 #define stack_pop_n(f, next) (((f) == 0) ? 0 : ((f) = (f)->next))
 
@@ -183,6 +167,7 @@
 #define stack_pop(f) stack_pop_n(f, next)
 
 //- queue
+
 #define queue_push_n(f, l, n, next) (((f) == 0) ? ((f)=(l)=(n), ((n)->next = 0)) : ((l)->next=(n),(l)=(n), ((n)->next = 0)))
 #define queue_push_front_n(f, l, n, next) (((f)==0) ? ((f)=(l)=(n),((n)->next = 0)) : ((n)->next=(f),(f)=(n)))
 #define queue_pop_n(f, l, next) (((f) == 0) ? 0 : ((f)==(l) ? (((f) = 0),((l) = 0)) : (f)=(f)->next))
@@ -192,6 +177,7 @@
 #define queue_pop(f, l) queue_pop_n(f, l, next)
 
 //- doubly linked list
+
 #define dll_insert_np(f,l,p,n,next,prev) (((f) == 0) ? ((f) = (l) = (n), (((n)->next) = 0), (((n)->prev) = 0)) : ((p) == 0) ? ((n)->next = (f), (f)->prev = (n), (f) = (n), (((n)->prev) = 0)) : ((p) == (l)) ? ((l)->next = (n), (n)->prev = (l), (l) = (n), (((n)->next) = 0)) : (((!((p) == 0) && (((p)->next) == 0)) ? (0) : ((p)->next->prev = (n))), ((n)->next = (p)->next), ((p)->next = (n)), ((n)->prev = (p))))
 #define dll_push_back_np(f,l,n,next,prev) (((f) == 0) ? ((f) = (l) = (n), (((n)->next) = 0), (((n)->prev) = 0)) : ((l) == 0) ? ((n)->next = (f), (f)->prev = (n), (f) = (n), (((n)->prev) = 0)) : ((l) == (l)) ? ((l)->next = (n), (n)->prev = (l), (l) = (n), (((n)->next) = 0)) : (((!((l) == 0) && (((l)->next) == 0)) ? (0) : ((l)->next->prev = (n))), ((n)->next = (l)->next), ((l)->next = (n)), ((n)->prev = (l))))
 #define dll_push_front_np(f,l,n,next,prev) (((l) == 0) ? ((l) = (f) = (n), (((n)->prev) = 0), (((n)->next) = 0)) : ((f) == 0) ? ((n)->prev = (l), (l)->next = (n), (l) = (n), (((n)->next) = 0)) : ((f) == (f)) ? ((f)->prev = (n), (n)->next = (f), (f) = (n), (((n)->prev) = 0)) : (((!((f) == 0) && (((f)->prev) == 0)) ? (0) : ((f)->prev->next = (n))), ((n)->prev = (f)->prev), ((f)->prev = (n)), ((n)->next = (f))))
@@ -227,7 +213,7 @@ typedef volatile uint32_t atomic_u32;
 typedef volatile uint64_t atomic_u64;
 typedef volatile void* atomic_ptr;
 
-//~ atmomics
+//~ atomics
 
 #if COMPILER_MSVC
 
@@ -247,6 +233,20 @@ typedef volatile void* atomic_ptr;
 #define atomic_i64_add(x, c) _InterlockedExchangeAdd64((volatile long long*)(x), (c))
 #define atomic_i64_cond_assign(x, k, c) (_InterlockedCompareExchange64((volatile long long*)(x), (k), (c)) == c)
 
+#define atomic_u32_load(x) _InterlockedOr((volatile unsigned long*)(x), 0)
+#define atomic_u32_assign(x, c) _InterlockedExchange((volatile unsigned long*)(x), (c))
+#define atomic_u32_inc(x) _InterlockedExchangeAdd((volatile unsigned long*)(x), 1)
+#define atomic_u32_dec(x) _InterlockedExchangeAdd((volatile unsigned long*)(x), -1)
+#define atomic_u32_add(x, c) _InterlockedExchangeAdd((volatile unsigned long*)(x), (c))
+#define atomic_u32_cond_assign(x, k, c) (_InterlockedCompareExchange((volatile unsigned long*)(x), (k), (c)) == c)
+
+#define atomic_u64_load(x) _InterlockedOr64((volatile unsigned long long*)(x), 0)
+#define atomic_u64_assign(x, c) _InterlockedExchange64((volatile unsigned long long*)(x), (c))
+#define atomic_u64_inc(x) _InterlockedExchangeAdd64((volatile unsigned long long*)(x), 1)
+#define atomic_u64_dec(x) _InterlockedExchangeAdd64((volatile unsigned long long*)(x), -1)
+#define atomic_u64_add(x, c) _InterlockedExchangeAdd64((volatile unsigned long long*)(x), (c))
+#define atomic_u64_cond_assign(x, k, c) (_InterlockedCompareExchange64((volatile unsigned long long*)(x), (k), (c)) == c)
+
 #define atomic_ptr_load(x) ((void*)_InterlockedCompareExchangePointer((void* volatile*)(x), NULL, NULL))
 #define atomic_ptr_assign(x, v) ((void*)_InterlockedExchangePointer((void* volatile*)(x), (void*)(v)))
 #define atomic_ptr_cond_assign(x, k, c) (_InterlockedCompareExchangePointer((void* volatile*)(x), (void*)(k), (void*)(c)) == (void*)(c))
@@ -255,31 +255,49 @@ typedef volatile void* atomic_ptr;
 
 #elif COMPILER_CLANG || COMPILER_GCC
 
-#define atomic_u32_load(x) __atomic_load_n((volatile u32*)(x), __ATOMIC_SEQ_CST)
-#define atomic_u32_assign(x, c) __atomic_exchange_n((volatile u64 *)(x), c, __ATOMIC_SEQ_CST)
-#define atomic_u32_inc(x) (__atomic_fetch_add((volatile u32*)(x), 1, __ATOMIC_SEQ_CST) + 1)
-#define atomic_u32_dec(x) (__atomic_fetch_sub((volatile u32*)(x), 1, __ATOMIC_SEQ_CST) + 1)
-#define atomic_u32_add(x, c) (__atomic_fetch_add((volatile u32*)(x), c, __ATOMIC_SEQ_CST) + (c))
-#define atomic_u32_cond_assign(x, k, c) ({ u32 _new = (c); __atomic_compare_exchange_n((volatile u32 *)(x),&_new,(k),0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); _new; })
+#define atomic_i32_load(x) __atomic_load_n((x), __ATOMIC_SEQ_CST)
+#define atomic_i32_assign(x, c) __atomic_store_n((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_i32_inc(x) __atomic_fetch_add((x), 1, __ATOMIC_SEQ_CST)
+#define atomic_i32_dec(x) __atomic_fetch_add((x), -1, __ATOMIC_SEQ_CST)
+#define atomic_i32_add(x, c) __atomic_fetch_add((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_i32_cond_assign(x, k, c) __atomic_compare_exchange_n((x), &(int32_t){c}, (k), 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 
-#define atomic_u64_load(x)  __atomic_load_n((volatile u64*)(x), __ATOMIC_SEQ_CST)
-#define atomic_u64_assign(x, c) __atomic_exchange_n((volatile u64 *)(x), c, __ATOMIC_SEQ_CST)
-#define atomic_u64_inc(x) (__atomic_fetch_add((volatile u64 *)(x), 1, __ATOMIC_SEQ_CST) + 1)
-#define atomic_u64_dec(x) (__atomic_fetch_sub((volatile u64 *)(x), 1, __ATOMIC_SEQ_CST) - 1)
-#define atomic_u64_add(x, c) (__atomic_fetch_add((volatile u64 *)(x), c, __ATOMIC_SEQ_CST) + (c))
-#define atomic_u64_cond_assign(x, k, c) ({ u64 _new = (c); __atomic_compare_exchange_n((volatile u64 *)(x),&_new,(k),0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); _new; })
+#define atomic_i64_load(x) __atomic_load_n((x), __ATOMIC_SEQ_CST)
+#define atomic_i64_assign(x, c) __atomic_store_n((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_i64_inc(x) __atomic_fetch_add((x), 1, __ATOMIC_SEQ_CST)
+#define atomic_i64_dec(x) __atomic_fetch_add((x), -1, __ATOMIC_SEQ_CST)
+#define atomic_i64_add(x, c) __atomic_fetch_add((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_i64_cond_assign(x, k, c) __atomic_compare_exchange_n((x), &(int64_t){c}, (k), 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+
+#define atomic_u32_load(x) __atomic_load_n((x), __ATOMIC_SEQ_CST)
+#define atomic_u32_assign(x, c) __atomic_store_n((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_u32_inc(x) __atomic_fetch_add((x), 1, __ATOMIC_SEQ_CST)
+#define atomic_u32_dec(x) __atomic_fetch_add((x), -1, __ATOMIC_SEQ_CST)
+#define atomic_u32_add(x, c) __atomic_fetch_add((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_u32_cond_assign(x, k, c) __atomic_compare_exchange_n((x), &(uint32_t){c}, (k), 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+
+#define atomic_u64_load(x) __atomic_load_n((x), __ATOMIC_SEQ_CST)
+#define atomic_u64_assign(x, c) __atomic_store_n((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_u64_inc(x) __atomic_fetch_add((x), 1, __ATOMIC_SEQ_CST)
+#define atomic_u64_dec(x) __atomic_fetch_add((x), -1, __ATOMIC_SEQ_CST)
+#define atomic_u64_add(x, c) __atomic_fetch_add((x), (c), __ATOMIC_SEQ_CST)
+#define atomic_u64_cond_assign(x, k, c) __atomic_compare_exchange_n((x), &(uint64_t){c}, (k), 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
+
+#define atomic_ptr_load(x) __atomic_load_n((x), __ATOMIC_SEQ_CST)
+#define atomic_ptr_assign(x, v) __atomic_store_n((x), (v), __ATOMIC_SEQ_CST)
+#define atomic_ptr_cond_assign(x, k, c) __atomic_compare_exchange_n((x), &(void*){c}, (k), 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 
 #endif 
 
 //~ enums
 
-typedef u32 str_match_flags;
+typedef u32 str_equal_flags;
 enum {
-	str_match_flag_case_insensitive = (1 << 0),
-	str_match_flag_right_side_sloppy = (1 << 1),
-	str_match_flag_slash_insensitive = (1 << 2),
-	str_match_flag_find_last = (1 << 3),
-	str_match_flag_keep_empties = (1 << 4),
+	str_equal_flag_case_insensitive = (1 << 0),
+	str_equal_flag_right_side_sloppy = (1 << 1),
+	str_equal_flag_slash_insensitive = (1 << 2),
+	str_equal_flag_find_last = (1 << 3),
+	str_equal_flag_keep_empties = (1 << 4),
 };
 
 enum color_blend_mode {
@@ -356,7 +374,6 @@ struct fuzzy_match_list_t {
     u32 count;
 };
 
-
 //- time 
 
 struct date_time_t {
@@ -370,9 +387,10 @@ struct date_time_t {
     u32 year; // [0-u32_max]
 };
 
-//- math
+//~ math structs
 
 //- vec2
+
 union vec2_t {
     
 	f32 data[2];
@@ -386,6 +404,7 @@ union vec2_t {
 };
 
 //- ivec2
+
 union ivec2_t {
     
 	i32 data[2];
@@ -399,6 +418,7 @@ union ivec2_t {
 };
 
 //- uvec2
+
 union uvec2_t {
     
 	u32 data[2];
@@ -412,6 +432,7 @@ union uvec2_t {
 };
 
 //- vec3
+
 union vec3_t {
     
 	f32 data[3];
@@ -443,10 +464,18 @@ union ivec3_t {
 		i32 x, y, z;
 	};
     
+    struct {
+        ivec2_t xy;
+        i32 _unused0;
+    };
+    
+    struct {
+        i32 _unused1;
+        ivec2_t yz;
+    };
+    
 	inline i32& operator[](i32 index) { return data[index]; }
 	inline const i32& operator[](i32 index) const { return data[index]; }
-    
-    
 };
 
 //- uvec3
@@ -459,6 +488,16 @@ union uvec3_t {
 		u32 x, y, z;
 	};
     
+    struct {
+        uvec2_t xy;
+        u32 _unused0;
+    };
+    
+    struct {
+        u32 _unused1;
+        uvec2_t yz;
+    };
+    
 	inline u32& operator[](i32 index) { return data[index]; }
 	inline const u32& operator[](i32 index) const { return data[index]; }
     
@@ -466,6 +505,7 @@ union uvec3_t {
 
 
 //- vec4
+
 union vec4_t {
     
 	f32 data[4];
@@ -502,7 +542,7 @@ union vec4_t {
 		vec3_t yzw;
 	};
     
-#if BASE_USE_SIMD
+#if SORA_USE_SIMD
 	__m128 sse;
 #endif
     
@@ -523,7 +563,7 @@ union quat_t {
 		f32 _unused0;
 	};
     
-#if BASE_USE_SIMD
+#if SORA_USE_SIMD
 	__m128 sse;
 #endif
 };
@@ -598,6 +638,9 @@ union rect_t {
 	
 };
 
+// NOTE: supporting simd operations for this color structs 
+// changes the memory alignment, which makes it annoying
+// used in gpu buffers. so for now, no simd :(
 union color_t {
     
     f32 data[4];
@@ -629,305 +672,345 @@ union complex_t {
 //~ globals
 
 global u32 random_state = 0;
-global u8 utf8_class[32] = {
-	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,2,2,2,2,3,3,4,5,
-};
-
+global u8 utf8_class[32] = { 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,2,2,2,2,3,3,4,5 };
 thread_global thread_context_t thread_context_local;
 
 //~ functions
 
-//- memory 
-function void* os_base_mem_reserve(u64 size);
-function void os_base_mem_release(void* ptr, u64 size);
-function void os_base_mem_commit(void* ptr, u64 size);
-function void os_base_mem_decommit(void* ptr, u64 size);
-
 //- arenas
-function arena_t* arena_create(u64 size);
-function void arena_release(arena_t* arena);
-function void* arena_alloc(arena_t* arena, u64 size);
-function void* arena_calloc(arena_t* arena, u64 size);
-function void arena_pop_to(arena_t* arena, u64 pos);
-function void arena_clear(arena_t* arena);
 
-function temp_t temp_begin(arena_t* arena);
-function void temp_end(temp_t temp);
+function arena_t*             arena_create(u64 size);
+function void                 arena_release(arena_t* arena);
+function void*                arena_alloc(arena_t* arena, u64 size);
+function void*                arena_calloc(arena_t* arena, u64 size);
+function void                 arena_pop_to(arena_t* arena, u64 pos);
+function void                 arena_clear(arena_t* arena);
 
-function temp_t scratch_begin();
-function void scratch_end(temp_t temp);
+function temp_t               temp_begin(arena_t* arena);
+function void                 temp_end(temp_t temp);
+
+function temp_t               scratch_begin();
+function void                 scratch_end(temp_t temp);
 
 //- thread context
-function void thread_context_create();
-function void thread_context_release();
-function thread_context_t* thread_context_get();
-function arena_t* thread_context_get_scratch();
+
+function void                 thread_context_create();
+function void                 thread_context_release();
+function thread_context_t*    thread_context_get();
+function arena_t*             thread_context_get_scratch();
 
 //- char functions
-function b8 char_is_whitespace(char c);
-function b8 char_is_alpha(char c);
-function b8 char_is_alpha_upper(char c);
-function b8 char_is_alpha_lower(char c);
-function b8 char_is_digit(char c);
-function b8 char_is_symbol(char c);
-function b8 char_is_space(char c);
-function char char_to_upper(char c);
-function char char_to_lower(char c);
-function char char_to_forward_slash(char c);
+
+function b8                   char_is_whitespace(char c);
+function b8                   char_is_alpha(char c);
+function b8                   char_is_alpha_upper(char c);
+function b8                   char_is_alpha_lower(char c);
+function b8                   char_is_digit(char c);
+function b8                   char_is_symbol(char c);
+function b8                   char_is_space(char c);
+function char                 char_to_upper(char c);
+function char                 char_to_lower(char c);
+function char                 char_to_forward_slash(char c);
 
 //- cstr
-function u32 cstr_length(cstr cstr);
-function b8 cstr_equals(cstr cstr1, cstr cstr2);
+
+function u32                  cstr_length(cstr cstr);
+function b8                   cstr_equals(cstr cstr1, cstr cstr2);
 
 //- unicode
-function codepoint_t utf8_decode(u8* data, u32 max);
-function codepoint_t utf16_decode(u16* data, u32 max);
-function u32 utf8_encode(u8* out, codepoint_t codepoint);
-function u32 utf16_encode(u16* out, codepoint_t codepoint);
+
+function codepoint_t          utf8_decode(u8* data, u32 max);
+function codepoint_t          utf16_decode(u16* data, u32 max);
+function u32                  utf8_encode(u8* out, codepoint_t codepoint);
+function u32                  utf16_encode(u16* out, codepoint_t codepoint);
 
 //- str
-function str_t str(char* cstr);
-function str_t str(char* cstr, u32 size);
-function str_t str_copy(arena_t* arena, str_t string);
-function str_t str_substr(str_t string, u32 min_pos, u32 max_pos);
-function str_t str_range(u8* first, u8* last);
-function str_t str_skip(str_t string, u32 min);
-function str_t str_chop(str_t string, u32 max);
-function str_t str_prefix(str_t string, u32 size);
-function str_t str_suffix(str_t string, u32 size);
-function b8 str_match(str_t a, str_t b, str_match_flags flags);
-function u32 str_find_substr(str_t haystack, str_t needle, u32 start_pos, str_match_flags flags);
-function str_t str_get_file_name(str_t string);
-function str_t str_get_file_extension(str_t string);
-function str_t str_formatv(arena_t* arena, char* fmt, va_list args);
-function str_t str_format(arena_t* arena, char* fmt, ...);
-function void str_scan(str_t string, char* fmt, ...);
-function u32 str_find_word_index(str_t string, u32 start_index, i32 dir);
-function u64 str_hash(u64 seed, str_t string);
-function str_t str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace);
+
+function str_t                str(char* string);
+function str_t                str(cstr string);
+function str_t                str(char* string, u32 size);
+function str_t                str_copy(arena_t* arena, str_t string);
+function str_t                str_substr(str_t string, u32 min_pos, u32 max_pos);
+function str_t                str_range(u8* first, u8* last);
+function str_t                str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace);
+function str_t                str_skip(str_t string, u32 min);
+function str_t                str_chop(str_t string, u32 max);
+function str_t                str_prefix(str_t string, u32 size);
+function str_t                str_suffix(str_t string, u32 size);
+function b8                   str_equals(str_t a, str_t b, str_equal_flags flags);
+function u32                  str_find_substr(str_t haystack, str_t needle, u32 start_pos, str_equal_flags flags);
+function u32                  str_find_word_index(str_t string, u32 start_index, i32 dir);
+function u64                  str_hash(u64 seed, str_t string);
+function void                 str_scan(str_t string, char* fmt, ...);
+function str_t                str_get_file_name(str_t string);
+function str_t                str_get_file_extension(str_t string);
+
+//- str format helpers
+
+function str_t                str_formatv(arena_t* arena, char* fmt, va_list args);
+function str_t                str_format(arena_t* arena, char* fmt, ...);
+function str_t                str_format_bytes(arena_t* arena, u64 byte_count);
 
 //- str list
-function void str_list_push_node(str_list_t* list, str_node_t* node);
-function void str_list_push(arena_t* arena, str_list_t* list, str_t string);
-function str_list_t str_split(arena_t* arena, str_t string, u8* splits, u32 split_count);
-function str_t* str_array_from_list(arena_t* arena, str_list_t* list);
+
+function void                 str_list_push_node(str_list_t* list, str_node_t* node);
+function void                 str_list_push(arena_t* arena, str_list_t* list, str_t string);
+function str_list_t           str_split(arena_t* arena, str_t string, u8* splits, u32 split_count);
+function str_t*               str_array_from_list(arena_t* arena, str_list_t* list);
 
 //- str16
-function str16_t str16(u16* data);
-function str16_t str16(u16* data, u32 size);
+
+function str16_t              str16(u16* data);
+function str16_t              str16(u16* data, u32 size);
 
 //- str conversions
-function str_t str_from_str16(arena_t* arena, str16_t string);
-function str16_t str16_from_str(arena_t* arena, str_t string);
+
+function str_t                str_from_str16(arena_t* arena, str16_t string);
+function str16_t              str16_from_str(arena_t* arena, str_t string);
 
 //- number/string conversions
-function f32 f32_from_str(str_t string);
-function str_t str_from_f32(f32 value);
-function i32 i32_from_str(str_t string);
+
+function f32                  f32_from_str(str_t string);
+function str_t                str_from_f32(f32 value);
+function i32                  i32_from_str(str_t string);
 
 //- fuzzy matching 
-function fuzzy_match_list_t str_fuzzy_match_find(arena_t* arena, str_t needle, str_t haystack);
+
+function fuzzy_match_list_t   str_fuzzy_match_find(arena_t* arena, str_t needle, str_t haystack);
 
 //- time 
-function date_time_t date_time_from_dense_time(u64 densetime);
-function u64 dense_time_from_data_time(date_time_t datetime);
 
-function date_time_t date_time_from_microseconds(u32 microseconds);
+function date_time_t          date_time_from_dense_time(u64 densetime);
+function u64                  dense_time_from_data_time(date_time_t datetime);
+
+function date_time_t          date_time_from_microseconds(u32 microseconds);
 
 //- random
-function void random_seed(u32 seed);
-function u32 random_u32();
-function u32 random_u32_range(u32 min_value, u32 max_value);
-function f32 random_f32();
-function f32 random_f32_range(f32 min_value, f32 max_value);
+
+function void                 random_seed(u32 seed);
+function u32                  random_u32();
+function u32                  random_u32_range(u32 min_value, u32 max_value);
+function f32                  random_f32();
+function f32                  random_f32_range(f32 min_value, f32 max_value);
 
 //- math
-inlnfunc f32 radians(f32 deg);
-inlnfunc f32 degrees(f32 rad);
-inlnfunc f32 remap(f32 value, f32 from_min, f32 from_max, f32 to_min, f32 to_max);
-inlnfunc f32 lerp(f32 a, f32 b, f32 t);
-inlnfunc f32 wrap(f32 v, f32 min, f32 max);
-inlnfunc f32 sign(f32 v);
+
+inlnfunc f32                  radians(f32 deg);
+inlnfunc f32                  degrees(f32 rad);
+inlnfunc f32                  remap(f32 value, f32 from_min, f32 from_max, f32 to_min, f32 to_max);
+inlnfunc f32                  lerp(f32 a, f32 b, f32 t);
+inlnfunc f32                  wrap(f32 v, f32 min, f32 max);
+inlnfunc f32                  sign(f32 v);
 
 //- vec2 
-inlnfunc vec2_t vec2(f32);
-inlnfunc vec2_t vec2(f32, f32);
-inlnfunc vec2_t vec2_add(vec2_t, f32);
-inlnfunc vec2_t vec2_add(vec2_t, vec2_t);
-inlnfunc vec2_t vec2_sub(vec2_t, f32);
-inlnfunc vec2_t vec2_sub(vec2_t, vec2_t);
-inlnfunc vec2_t vec2_mul(vec2_t, f32);
-inlnfunc vec2_t vec2_mul(vec2_t, vec2_t);
-inlnfunc vec2_t vec2_div(vec2_t, f32);
-inlnfunc vec2_t vec2_div(vec2_t, vec2_t);
-inlnfunc b8     vec2_equals(vec2_t, vec2_t);
-inlnfunc vec2_t vec2_min(vec2_t, vec2_t);
-inlnfunc vec2_t vec2_max(vec2_t, vec2_t);
-inlnfunc f32    vec2_dot(vec2_t, vec2_t);
-inlnfunc f32    vec2_cross(vec2_t, vec2_t);
-inlnfunc f32    vec2_length(vec2_t);
-inlnfunc vec2_t vec2_normalize(vec2_t);
-inlnfunc vec2_t vec2_direction(vec2_t, vec2_t);
-inlnfunc f32    vec2_to_angle(vec2_t);
-inlnfunc vec2_t vec2_from_angle(f32, f32 = 1);
-inlnfunc vec2_t vec2_rotate(vec2_t, f32);
-inlnfunc vec2_t vec2_lerp(vec2_t, vec2_t, f32);
+
+inlnfunc vec2_t               vec2(f32 x, f32 y);
+inlnfunc vec2_t               vec2(f32 v);
+inlnfunc b8                   vec2_equals(vec2_t a, vec2_t b);
+inlnfunc vec2_t               vec2_add(vec2_t a, vec2_t b);
+inlnfunc vec2_t               vec2_add(vec2_t a, f32 b);
+inlnfunc vec2_t               vec2_sub(vec2_t a, vec2_t b);
+inlnfunc vec2_t               vec2_sub(vec2_t a, f32 b);
+inlnfunc vec2_t               vec2_mul(vec2_t a, vec2_t b);
+inlnfunc vec2_t               vec2_mul(vec2_t a, f32 b);
+inlnfunc vec2_t               vec2_div(vec2_t a, vec2_t b);
+inlnfunc vec2_t               vec2_div(vec2_t a, f32 b);
+inlnfunc vec2_t               vec2_min(vec2_t a, vec2_t b);
+inlnfunc vec2_t               vec2_max(vec2_t a, vec2_t b);
+inlnfunc f32                  vec2_dot(vec2_t a, vec2_t b);
+inlnfunc f32                  vec2_cross(vec2_t a, vec2_t b);
+inlnfunc f32                  vec2_length(vec2_t v);
+inlnfunc vec2_t               vec2_normalize(vec2_t v);
+inlnfunc vec2_t               vec2_direction(vec2_t a, vec2_t b);
+inlnfunc f32                  vec2_to_angle(vec2_t v);
+inlnfunc vec2_t               vec2_from_angle(f32 a, f32 m = 1.0f);
+inlnfunc vec2_t               vec2_rotate(vec2_t v, f32 a);
+inlnfunc vec2_t               vec2_lerp(vec2_t a, vec2_t b, f32 t);
 
 //- ivec2
-inlnfunc ivec2_t ivec2(i32);
-inlnfunc ivec2_t ivec2(i32, i32);
-inlnfunc b8 ivec2_equals(i32, i32);
+
+inlnfunc ivec2_t              ivec2(i32 x, i32 y);
+inlnfunc ivec2_t              ivec2(i32 v);
+inlnfunc b8                   ivec2_equals(ivec2_t a, ivec2_t b);
+inlnfunc ivec2_t              ivec2_add(ivec2_t a, ivec2_t b);
+inlnfunc ivec2_t              ivec2_add(ivec2_t a, i32 b);
+inlnfunc ivec2_t              ivec2_sub(ivec2_t a, ivec2_t b);
+inlnfunc ivec2_t              ivec2_sub(ivec2_t a, i32 b);
+inlnfunc ivec2_t              ivec2_mul(ivec2_t a, ivec2_t b);
+inlnfunc ivec2_t              ivec2_mul(ivec2_t a, i32 b);
+inlnfunc ivec2_t              ivec2_div(ivec2_t a, ivec2_t b);
+inlnfunc ivec2_t              ivec2_div(ivec2_t a, i32 b);
 
 //- uvec2
-inlnfunc uvec2_t uvec2(u32);
-inlnfunc uvec2_t uvec2(u32, u32);
-inlnfunc b8 uvec2_equals(u32, u32);
+
+inlnfunc uvec2_t              uvec2(u32 x, u32 y);
+inlnfunc uvec2_t              uvec2(u32 v);
+inlnfunc b8                   uvec2_equals(uvec2_t a, uvec2_t b);
+inlnfunc uvec2_t              uvec2_add(uvec2_t a, uvec2_t b);
+inlnfunc uvec2_t              uvec2_add(uvec2_t a, u32 b);
+inlnfunc uvec2_t              uvec2_sub(uvec2_t a, uvec2_t b);
+inlnfunc uvec2_t              uvec2_sub(uvec2_t a, u32 b);
+inlnfunc uvec2_t              uvec2_mul(uvec2_t a, uvec2_t b);
+inlnfunc uvec2_t              uvec2_mul(uvec2_t a, u32 b);
+inlnfunc uvec2_t              uvec2_div(uvec2_t a, uvec2_t b);
+inlnfunc uvec2_t              uvec2_div(uvec2_t a, u32 b);
 
 //- vec3
-inlnfunc vec3_t vec3(f32);
-inlnfunc vec3_t vec3(f32, f32, f32);
-inlnfunc vec3_t vec3(vec2_t, f32);
-inlnfunc vec3_t vec3_add(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_add(vec3_t, f32);
-inlnfunc vec3_t vec3_sub(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_sub(vec3_t, f32);
-inlnfunc vec3_t vec3_mul(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_mul(vec3_t, f32);
-inlnfunc vec3_t vec3_div(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_div(vec3_t, f32);
-inlnfunc b8     vec3_equals(vec3_t, vec3_t);
-inlnfunc f32    vec3_dot(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_cross(vec3_t, vec3_t);
-inlnfunc f32    vec3_length(vec3_t);
-inlnfunc vec3_t vec3_normalize(vec3_t);
-inlnfunc vec3_t vec3_negate(vec3_t);
-inlnfunc vec3_t vec3_lerp(vec3_t, vec3_t, f32);
-inlnfunc f32    vec3_angle_between(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_project(vec3_t, vec3_t);
-inlnfunc vec3_t vec3_rotate(vec3_t, quat_t);
-inlnfunc vec3_t vec3_clamp(vec3_t, f32, f32);
+
+inlnfunc vec3_t               vec3(f32 x, f32 y, f32 z);
+inlnfunc vec3_t               vec3(f32 v);
+inlnfunc vec3_t               vec3(vec2_t xy, f32 z);
+inlnfunc vec3_t               vec3(f32 x, vec2_t yz);
+inlnfunc vec3_t               vec3_add(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_add(vec3_t a, f32 b);
+inlnfunc vec3_t               vec3_sub(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_sub(vec3_t a, f32 b);
+inlnfunc vec3_t               vec3_mul(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_mul(vec3_t a, f32 b);
+inlnfunc vec3_t               vec3_div(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_div(vec3_t a, f32 b);
+inlnfunc b8                   vec3_equals(vec3_t a, vec3_t b);
+inlnfunc f32                  vec3_dot(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_cross(vec3_t a, vec3_t b);
+inlnfunc f32                  vec3_length(vec3_t v);
+inlnfunc vec3_t               vec3_normalize(vec3_t v);
+inlnfunc vec3_t               vec3_negate(vec3_t v);
+inlnfunc vec3_t               vec3_lerp(vec3_t a, vec3_t b, f32 t);
+inlnfunc f32                  vec3_angle_between(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_project(vec3_t a, vec3_t b);
+inlnfunc vec3_t               vec3_rotate(vec3_t v, quat_t q);
+inlnfunc vec3_t               vec3_clamp(vec3_t a, f32 min, f32 max);
 
 //- ivec3
-inlnfunc ivec3_t ivec3(i32);
-inlnfunc ivec3_t ivec3(i32, i32, i32);
-inlnfunc b8      ivec3_equals(ivec3_t, ivec3_t);
-inlnfunc ivec3_t ivec3_add(ivec3_t a, ivec3_t b);
+
+inlnfunc ivec3_t              ivec3(i32 x, i32 y, i32 z);
+inlnfunc ivec3_t              ivec3(i32 v);
+inlnfunc b8                   ivec3_equals(ivec3_t a, ivec3_t b);
+inlnfunc ivec3_t              ivec3_add(ivec3_t a, ivec3_t b);
 
 //- uvec3
-inlnfunc uvec3_t uvec3(u32);
-inlnfunc uvec3_t uvec3(u32, u32, u32);
-inlnfunc b8      uvec3_equals(uvec3_t, uvec3_t);
+
+inlnfunc uvec3_t              uvec3(u32 x, u32 y, u32 z);
+inlnfunc uvec3_t              uvec3(u32 z);
+inlnfunc b8                   uvec3_equals(uvec3_t a, uvec3_t b);
 
 //- vec4
-inlnfunc vec4_t vec4(f32);
-inlnfunc vec4_t vec4(f32, f32, f32, f32);
-inlnfunc vec4_t vec4_add(vec4_t, vec4_t);
-inlnfunc vec4_t vec4_add(vec4_t, f32);
-inlnfunc vec4_t vec4_sub(vec4_t, vec4_t);
-inlnfunc vec4_t vec4_sub(vec4_t, f32);
-inlnfunc vec4_t vec4_mul(vec4_t, vec4_t);
-inlnfunc vec4_t vec4_mul(vec4_t, f32);
-inlnfunc vec4_t vec4_mul(vec4_t, mat4_t);
-inlnfunc vec4_t vec4_div(vec4_t, vec4_t);
-inlnfunc vec4_t vec4_div(vec4_t, f32);
-inlnfunc b8     vec4_equals(vec4_t, vec4_t);
-inlnfunc f32    vec4_dot(vec4_t, vec4_t);
-inlnfunc f32    vec4_length(vec4_t);
-inlnfunc vec4_t vec4_normalize(vec4_t);
-inlnfunc vec4_t vec4_lerp(vec4_t, vec4_t, f32);
-inlnfunc f32    vec4_angle_between(vec4_t, vec4_t);
-inlnfunc vec4_t vec4_project(vec4_t, vec4_t);
+
+inlnfunc vec4_t              vec4(f32 x, f32 y, f32 z, f32 w);
+inlnfunc vec4_t              vec4(f32 v);
+inlnfunc vec4_t              vec4_add(vec4_t a, vec4_t b);
+inlnfunc vec4_t              vec4_add(vec4_t a, f32 b);
+inlnfunc vec4_t              vec4_sub(vec4_t a, vec4_t b);
+inlnfunc vec4_t              vec4_sub(vec4_t a, f32 b);
+inlnfunc vec4_t              vec4_mul(vec4_t a, vec4_t b);
+inlnfunc vec4_t              vec4_mul(vec4_t a, f32 b);
+inlnfunc vec4_t              vec4_mul(vec4_t a, mat4_t b);
+inlnfunc vec4_t              vec4_div(vec4_t a, vec4_t b);
+inlnfunc vec4_t              vec4_div(vec4_t a, f32 b);
+inlnfunc b8                  vec4_equals(vec4_t a, vec4_t b);
+inlnfunc f32                 vec4_dot(vec4_t a, vec4_t b);
+inlnfunc f32                 vec4_length(vec4_t a);
+inlnfunc vec4_t              vec4_normalize(vec4_t a);
+inlnfunc vec4_t              vec4_lerp(vec4_t a, vec4_t b, f32 t);
+inlnfunc f32                 vec4_angle_between(vec4_t a, vec4_t b);
+inlnfunc vec4_t              vec4_project(vec4_t a, vec4_t b);
 
 //- rect
-inlnfunc rect_t rect(f32, f32, f32, f32);
-inlnfunc rect_t rect(vec2_t, vec2_t);
-inlnfunc b8     rect_equals(rect_t a, rect_t b);
-inlnfunc void   rect_validate(rect_t&);
-inlnfunc b8     rect_contains(rect_t, vec2_t);
-inlnfunc b8     rect_contains(rect_t, rect_t);
-inlnfunc rect_t rect_intersection(rect_t, rect_t);
-inlnfunc f32    rect_width(rect_t);
-inlnfunc f32    rect_height(rect_t);
-inlnfunc vec2_t rect_size(rect_t);
-inlnfunc vec2_t rect_center(rect_t);
-inlnfunc rect_t rect_grow(rect_t, f32);
-inlnfunc rect_t rect_grow(rect_t, vec2_t);
-inlnfunc rect_t rect_shrink(rect_t, f32);
-inlnfunc rect_t rect_shrink(rect_t, vec2_t);
-inlnfunc rect_t rect_translate(rect_t, f32);
-inlnfunc rect_t rect_translate(rect_t, vec2_t);
-inlnfunc rect_t rect_bbox(vec2_t*, u32);
-inlnfunc rect_t rect_round(rect_t);
-inlnfunc rect_t rect_lerp(rect_t a, rect_t b, f32 t);
+
+inlnfunc rect_t              rect(f32 x0, f32 y0, f32 x1, f32 y1);
+inlnfunc rect_t              rect(vec2_t v0, vec2_t v1);
+inlnfunc b8                  rect_equals(rect_t a, rect_t b);
+inlnfunc void                rect_validate(rect_t& r);
+inlnfunc b8                  rect_contains(rect_t r, vec2_t p);
+inlnfunc b8                  rect_contains(rect_t a, rect_t b);
+inlnfunc rect_t              rect_intersection(rect_t a, rect_t b);
+inlnfunc f32                 rect_width(rect_t r);
+inlnfunc f32                 rect_height(rect_t r);
+inlnfunc vec2_t              rect_size(rect_t r);
+inlnfunc vec2_t              rect_center(rect_t r);
+inlnfunc rect_t              rect_grow(rect_t r, f32 v);
+inlnfunc rect_t              rect_grow(rect_t r, vec2_t v);
+inlnfunc rect_t              rect_shrink(rect_t r, f32 v);
+inlnfunc rect_t              rect_shrink(rect_t r, vec2_t v);
+inlnfunc rect_t              rect_translate(rect_t r, f32 v);
+inlnfunc rect_t              rect_translate(rect_t r, vec2_t v);
+inlnfunc rect_t              rect_bbox(vec2_t* points, u32 count);
+inlnfunc rect_t              rect_round(rect_t r);
+inlnfunc rect_t              rect_lerp(rect_t a, rect_t b, f32 t);
 
 //- quat
-inlnfunc quat_t quat(f32, f32, f32, f32);
-inlnfunc quat_t quat(vec4_t);
-inlnfunc quat_t quat_from_axis_angle(vec3_t, f32);
-inlnfunc quat_t quat_from_euler_angle(vec3_t);
-inlnfunc vec3_t quat_to_euler_angle(quat_t);
-inlnfunc vec3_t quat_to_dir(quat_t);
-inlnfunc quat_t quat_add(quat_t, quat_t);
-inlnfunc quat_t quat_sub(quat_t, quat_t);
-inlnfunc quat_t quat_mul(quat_t, quat_t);
-inlnfunc quat_t quat_mul(quat_t, f32);
-inlnfunc quat_t quat_div(quat_t, f32);
-inlnfunc f32    quat_dot(quat_t, quat_t);
-inlnfunc quat_t quat_inverse(quat_t);
-inlnfunc f32    quat_length(quat_t);
-inlnfunc quat_t quat_normalize(quat_t);
-inlnfunc quat_t quat_negate(quat_t);
-inlnfunc quat_t quat_lerp(quat_t, quat_t, f32);
-inlnfunc quat_t quat_slerp(quat_t, quat_t, f32);
-inlnfunc quat_t quat_look_at(vec3_t from, vec3_t to, vec3_t up);
+
+inlnfunc quat_t              quat(f32 x, f32 y, f32 z, f32 w);
+inlnfunc quat_t              quat(vec4_t v);
+inlnfunc quat_t              quat_from_axis_angle(vec3_t axis, f32 angle);
+inlnfunc quat_t              quat_from_euler_angle(vec3_t euler);
+inlnfunc vec3_t              quat_to_euler_angle(quat_t q);
+inlnfunc vec3_t              quat_to_dir(quat_t q);
+inlnfunc quat_t              quat_add(quat_t a, quat_t b);
+inlnfunc quat_t              quat_sub(quat_t a, quat_t b);
+inlnfunc quat_t              quat_mul(quat_t a, quat_t b);
+inlnfunc quat_t              quat_mul(quat_t a, f32 b);
+inlnfunc quat_t              quat_div(quat_t a, f32 b);
+inlnfunc f32                 quat_dot(quat_t a, quat_t b);
+inlnfunc quat_t              quat_inverse(quat_t q);
+inlnfunc f32                 quat_length(quat_t q);
+inlnfunc quat_t              quat_normalize(quat_t q);
+inlnfunc quat_t              quat_negate(quat_t q);
+inlnfunc quat_t              quat_lerp(quat_t a, quat_t b, f32 t);
+inlnfunc quat_t              quat_slerp(quat_t a, quat_t b, f32 t);
+inlnfunc quat_t              quat_look_at(vec3_t from, vec3_t to, vec3_t up);
 
 //- mat4
-inlnfunc mat4_t mat4(f32);
-inlnfunc b8     mat4_equals(mat4_t, mat4_t);
-inlnfunc mat4_t mat4_transpose(mat4_t);
-inlnfunc mat4_t mat4_from_quat(quat_t);
 
-inlnfunc mat4_t mat4_translate(vec3_t);
-inlnfunc mat4_t mat4_translate(mat4_t, vec3_t);
-inlnfunc mat4_t mat4_scale(vec3_t);
+inlnfunc mat4_t              mat4(f32 v);
+inlnfunc b8                  mat4_equals(mat4_t a, mat4_t b);
+inlnfunc mat4_t              mat4_transpose(mat4_t m);
+inlnfunc mat4_t              mat4_from_quat(quat_t q);
 
-inlnfunc mat4_t mat4_mul(mat4_t, mat4_t);
-inlnfunc vec4_t mat4_mul(mat4_t, vec4_t);
-inlnfunc mat4_t mat4_inverse(mat4_t);
-inlnfunc mat4_t mat4_inv_perspective(mat4_t);
+inlnfunc mat4_t              mat4_translate(vec3_t v);
+inlnfunc mat4_t              mat4_translate(mat4_t a, vec3_t v);
+inlnfunc mat4_t              mat4_scale(vec3_t v);
+inlnfunc mat4_t              mat4_scale(mat4_t m, vec3_t v);
 
-inlnfunc mat4_t mat4_orthographic(f32, f32, f32, f32, f32, f32);
-inlnfunc mat4_t mat4_perspective(f32, f32, f32, f32);
-inlnfunc mat4_t mat4_lookat(vec3_t, vec3_t, vec3_t);
-function void   mat4_print(mat4_t);
+inlnfunc mat4_t              mat4_mul(mat4_t a, mat4_t b);
+inlnfunc vec4_t              mat4_mul(mat4_t a, vec4_t b);
+inlnfunc mat4_t              mat4_inverse(mat4_t m);
+inlnfunc mat4_t              mat4_inv_perspective(mat4_t m);
+
+inlnfunc mat4_t              mat4_orthographic(f32 left, f32 right, f32 top, f32 bottom, f32 z_near, f32 z_far);
+inlnfunc mat4_t              mat4_perspective(f32 fov, f32 ar, f32 z_near, f32 z_far);
+inlnfunc mat4_t              mat4_lookat(vec3_t from, vec3_t to, vec3_t up);
+function void                mat4_print(mat4_t m);
 
 //- color
-inlnfunc color_t color(u32 hex);
-inlnfunc color_t color(f32 r, f32 g, f32 b, f32 a = 1.0f);
-inlnfunc color_t color_hsv(f32 h, f32 s, f32 v, f32 a = 1.0f);
-inlnfunc b8      color_equals(color_t a, color_t b);
-inlnfunc color_t color_add(color_t a, f32 b);
-inlnfunc color_t color_add(color_t a, color_t b);
-inlnfunc color_t color_lerp(color_t a, color_t b, f32 t);
-inlnfunc color_t color_hsv_from_rgb(color_t rgb);
-inlnfunc color_t color_rgb_from_hsv(color_t hsv);
-function color_t color_blend(color_t a, color_t b, color_blend_mode mode = color_blend_mode_normal);
-inlnfunc u32     color_to_hex(color_t color);
+
+inlnfunc color_t             color(u32 hex);
+inlnfunc color_t             color(f32 r, f32 g, f32 b, f32 a = 1.0f);
+inlnfunc color_t             color_hsv(f32 h, f32 s, f32 v, f32 a = 1.0f);
+inlnfunc b8                  color_equals(color_t a, color_t b);
+inlnfunc color_t             color_add(color_t a, f32 b);
+inlnfunc color_t             color_add(color_t a, color_t b);
+inlnfunc color_t             color_lerp(color_t a, color_t b, f32 t);
+inlnfunc color_t             color_hsv_from_rgb(color_t rgb);
+inlnfunc color_t             color_rgb_from_hsv(color_t hsv);
+function color_t             color_blend(color_t a, color_t b, color_blend_mode mode = color_blend_mode_normal);
+inlnfunc u32                 color_to_hex(color_t color);
 
 //- complex 
 
-inlnfunc complex_t complex(f32 real, f32 imag);
-inlnfunc complex_t complex_add(complex_t a, complex_t b);
-inlnfunc complex_t complex_sub(complex_t a, complex_t b);
-inlnfunc complex_t complex_mul(complex_t a, complex_t b);
-inlnfunc complex_t complex_div(complex_t a, complex_t b);
-inlnfunc f32       complex_modulus(complex_t c);
-inlnfunc complex_t complex_conjugate(complex_t c);
-inlnfunc f32       complex_argument(complex_t c);
-inlnfunc complex_t complex_exponential(f32 angle);
+inlnfunc complex_t           complex(f32 real, f32 imag);
+inlnfunc complex_t           complex_add(complex_t a, complex_t b);
+inlnfunc complex_t           complex_sub(complex_t a, complex_t b);
+inlnfunc complex_t           complex_mul(complex_t a, complex_t b);
+inlnfunc complex_t           complex_div(complex_t a, complex_t b);
+inlnfunc f32                 complex_modulus(complex_t c);
+inlnfunc complex_t           complex_conjugate(complex_t c);
+inlnfunc f32                 complex_argument(complex_t c);
+inlnfunc complex_t           complex_exponential(f32 angle);
 
 //- misc
-function vec3_t barycentric(vec2_t p, vec2_t a, vec2_t b, vec2_t c);
-function b8 tri_contains(vec2_t a, vec2_t b, vec2_t c, vec2_t p);
+
+function vec3_t              barycentric(vec2_t p, vec2_t a, vec2_t b, vec2_t c);
+function b8                  tri_contains(vec2_t a, vec2_t b, vec2_t c, vec2_t p);
 
 #endif // SORA_BASE_H

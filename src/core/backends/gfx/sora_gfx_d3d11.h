@@ -3,193 +3,132 @@
 #ifndef SORA_GFX_D3D11_H
 #define SORA_GFX_D3D11_H
 
-//- includes
+//~ includes 
 
 #include <d3d11_1.h>
 #include <d3dcompiler.h>
 
-//- defines
+//~ defines 
 
-#if BUILD_DEBUG 
-#define gfx_check(hr, fmt, ...)\
-if (FAILED(hr)) {\
-temp_t scratch = scratch_begin();\
-os_graphical_message(true, str_format(scratch.arena, "gfx error (hr: %x)", hr), str_format(scratch.arena, fmt, __VA_ARGS__));\
-os_abort(1);\
-}
-#elif BUILD_RELEASE
-#define gfx_check(hr, fmt, ...)
-#endif 
+//~ enums 
 
-//- structs
-
-// buffer
-struct gfx_d3d11_buffer_t {
-    gfx_buffer_desc_t desc;
-	ID3D11Buffer* id;
-    ID3D11ShaderResourceView* srv;
-    ID3D11UnorderedAccessView* uav;
+enum gfx_d3d11_resource_type {
+    gfx_d3d11_resource_type_null,
+    gfx_d3d11_resource_type_buffer,
+    gfx_d3d11_resource_type_texture,
+    gfx_d3d11_resource_type_shader,
+    gfx_d3d11_resource_type_render_target,
 };
 
-// texture
-struct gfx_d3d11_texture_t {
-    gfx_texture_desc_t desc;
-	ID3D11Texture2D* id;
-	ID3D11ShaderResourceView* srv;
-	ID3D11UnorderedAccessView* uav;
-};
 
-// shader
-struct gfx_d3d11_shader_t {
+//~ structs
+
+struct gfx_d3d11_resource_t {
+    gfx_d3d11_resource_t* next;
+    gfx_d3d11_resource_t* prev;
     
-    // desc
-    gfx_shader_desc_t desc;
+    gfx_d3d11_resource_type type;
     
     union {
-        ID3D11VertexShader* vertex_shader;
-        ID3D11PixelShader* pixel_shader;
-        ID3D11GeometryShader* geometry_shader;
-        ID3D11HullShader* hull_shader;
-        ID3D11DomainShader* domain_shader;
-        ID3D11ComputeShader* compute_shader;
+        gfx_buffer_desc_t buffer;
+        gfx_texture_desc_t texture;
+        gfx_shader_desc_t shader;
+        gfx_render_target_desc_t render_target;
+    } desc;
+    
+    union {
+        
+        // buffer
+        struct {
+            ID3D11Buffer* id;
+            ID3D11ShaderResourceView* srv;
+            ID3D11UnorderedAccessView* uav;
+        } buffer;
+        
+        // texture
+        struct {
+            ID3D11Texture2D* id;
+            ID3D11ShaderResourceView* srv;
+            ID3D11UnorderedAccessView* uav;
+        } texture;
+        
+        // shader
+        struct {
+            
+            union {
+                ID3D11VertexShader* vertex;
+                ID3D11PixelShader* pixel;
+                ID3D11GeometryShader* geometry;
+                ID3D11HullShader* hull;
+                ID3D11DomainShader* domain;
+                ID3D11ComputeShader* compute;
+            };
+            ID3DBlob* blob;
+            
+            // for vertex shader
+            ID3D11InputLayout* input_layout;
+            
+        } shader;
+        
+        // render target
+        struct {
+            gfx_texture_t color_texture;
+            gfx_texture_t depth_texture;
+            ID3D11RenderTargetView* rtv;
+            ID3D11DepthStencilView* dsv;
+        } render_target;
+        
     };
-    ID3DBlob* shader_blob;
-    
-    // for vertex shader
-	ID3D11InputLayout* input_layout;
 };
-
-// render target
-struct gfx_d3d11_render_target_t {
-    gfx_render_target_desc_t desc;
-	gfx_handle_t color_texture;
-	gfx_handle_t depth_texture;
-	ID3D11RenderTargetView* rtv;
-	ID3D11DepthStencilView* dsv;
-};
-
-// resource
-struct gfx_d3d11_resource_t {
-	gfx_d3d11_resource_t* next;
-	gfx_d3d11_resource_t* prev;
-    
-	gfx_resource_type type;
-    
-	// resource members
-	union {
-		gfx_d3d11_buffer_t buffer;
-		gfx_d3d11_texture_t texture;
-		gfx_d3d11_shader_t shader;
-		gfx_d3d11_render_target_t render_target;
-	};
-};
-
-struct gfx_profile_node_t {
-    gfx_profile_node_t* next;
-    
-    str_t name;
-    f64 dt;
-};
-
-struct gpu_profile_entry_t {
-    
-};
-
-// context
 
 struct gfx_d3d11_context_t {
-	gfx_d3d11_context_t* next;
-	gfx_d3d11_context_t* prev;
+    gfx_d3d11_context_t* next;
+    gfx_d3d11_context_t* prev;
     
-	os_handle_t window;
-	uvec2_t resolution;
+    os_window_t window;
+    gfx_context_flags flags;
+    uvec2_t size;
     
-	IDXGISwapChain1* swapchain;
+    IDXGISwapChain1* swapchain;
 	ID3D11Texture2D* framebuffer;
 	ID3D11RenderTargetView* framebuffer_rtv;
-    
-    // queries
-    ID3D11Query* disjoint_query;
-    ID3D11Query* start_query;
-    ID3D11Query* end_query;
-    
-    f64 delta_time;
-    
-    gfx_profile_node_t* profile_top;
-    gfx_profile_node_t* profile_free;
+	ID3D11Texture2D* depthbuffer;
+	ID3D11DepthStencilView* depthbuffer_dsv;
     
 };
-
-// state
 
 struct gfx_d3d11_state_t {
     
-	// arenas
-	arena_t* arena;
+    arena_t* arena;
     
-    // resources
-	gfx_d3d11_resource_t* resource_first;
-	gfx_d3d11_resource_t* resource_last;
-	gfx_d3d11_resource_t* resource_free;
-	
-	// context
-	gfx_d3d11_context_t* context_first;
-	gfx_d3d11_context_t* context_last;
-	gfx_d3d11_context_t* context_free;
-	gfx_d3d11_context_t* context_active;
-    
-	// d3d11
+    // d3d11
 	ID3D11Device* device;
 	ID3D11DeviceContext* device_context;
 	IDXGIDevice1* dxgi_device;
 	IDXGIAdapter* dxgi_adapter;
 	IDXGIFactory2* dxgi_factory;
     
-	// d3d11 pipeline assets
-	ID3D11SamplerState* linear_wrap_sampler;
-	ID3D11SamplerState* linear_clamp_sampler;
-	ID3D11SamplerState* nearest_wrap_sampler;
-	ID3D11SamplerState* nearest_clamp_sampler;
+    // context
+    gfx_d3d11_context_t* context_first;
+    gfx_d3d11_context_t* context_last;
+    gfx_d3d11_context_t* context_free;
     
-	ID3D11DepthStencilState* depth_stencil_state;
-	ID3D11DepthStencilState* no_depth_stencil_state;
+    // resources
+    gfx_d3d11_resource_t* resource_first;
+    gfx_d3d11_resource_t* resource_last;
+    gfx_d3d11_resource_t* resource_free;
     
-	ID3D11RasterizerState* solid_cull_none_rasterizer;
-	ID3D11RasterizerState* solid_cull_front_rasterizer;
-	ID3D11RasterizerState* solid_cull_back_rasterizer;
-	ID3D11RasterizerState* wireframe_cull_none_rasterizer;
-	ID3D11RasterizerState* wireframe_cull_front_rasterizer;
-	ID3D11RasterizerState* wireframe_cull_back_rasterizer;
-    
-	ID3D11BlendState* blend_state;
 };
 
-//- globals
+//~ globals
 
 global gfx_d3d11_state_t gfx_d3d11_state;
 
-//- d3d11 specific functions
+//~ d3d11 specific functions 
 
-// texture
-function void gfx_d3d11_texture_create_resources(gfx_d3d11_resource_t* texture, void* data);
+//- resources 
 
-// resource functions
-function gfx_d3d11_resource_t* gfx_d3d11_resource_create(gfx_resource_type type);
+function gfx_d3d11_resource_t* gfx_d3d11_resource_alloc(gfx_d3d11_resource_type type);
 function void gfx_d3d11_resource_release(gfx_d3d11_resource_t* resource);
-
-// enum conversion functions
-function D3D11_USAGE gfx_d3d11_d3d11_usage_from_gfx_usage(gfx_usage);
-function UINT gfx_d3d11_access_flags_from_gfx_usage(gfx_usage);
-function D3D11_BIND_FLAG gfx_d3d11_bind_flags_from_buffer_type(gfx_buffer_type);
-function DXGI_FORMAT gfx_d3d11_dxgi_format_from_texture_format(gfx_texture_format);
-function DXGI_FORMAT gfx_d3d11_srv_format_from_texture_format(gfx_texture_format);
-function DXGI_FORMAT gfx_d3d11_dsv_format_from_texture_format(gfx_texture_format);
-function u32 gfx_d3d11_byte_size_from_texture_format(gfx_texture_format);
-function D3D11_PRIMITIVE_TOPOLOGY gfx_d3d11_prim_top_from_top_type(gfx_topology_type);
-function DXGI_FORMAT gfx_d3d11_dxgi_format_from_vertex_format(gfx_vertex_format);
-function D3D11_INPUT_CLASSIFICATION gfx_d3d11_input_class_from_shader_flags(gfx_shader_flags flags);
-function str_t gfx_d3d11_shader_entry_name_from_shader_flags(gfx_shader_flags flags);
-function str_t gfx_d3d11_shader_target_from_shader_flags(gfx_shader_flags flags);
-function DXGI_FORMAT gfx_d3d11_dxgi_format_from_mask_component(u32 mask, D3D_REGISTER_COMPONENT_TYPE component);
 
 #endif // SORA_GFX_D3D11_H

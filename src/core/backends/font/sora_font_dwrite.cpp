@@ -3,15 +3,65 @@
 #ifndef SORA_FONT_DWRITE_CPP
 #define SORA_FONT_DWRITE_CPP
 
-// include lib
+//~ includes
+
 #pragma comment(lib, "dwrite")
 
-// implementation
+//~ implementation
 
+//- state functions
 
-// font functions
+function void
+font_init() {
+    
+    _font_core_init();
+    
+	// allocate arenas
+	font_dwrite_state.arena = arena_create(megabytes(64));
+    
+	HRESULT hr = 0;
+    
+	// create dwrite factory
+	hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory2), (IUnknown**)&font_dwrite_state.dwrite_factory2);
+	
+	// create rendering params
+	hr = font_dwrite_state.dwrite_factory2->CreateRenderingParams(&font_dwrite_state.rendering_params);
+	
+	f32 gamma = font_dwrite_state.rendering_params->GetGamma();
+	f32 enhanced_contrast = font_dwrite_state.rendering_params->GetEnhancedContrast();
+	f32 clear_type_level = font_dwrite_state.rendering_params->GetClearTypeLevel();
+	
+    hr = font_dwrite_state.dwrite_factory2->CreateCustomRenderingParams(gamma, enhanced_contrast, enhanced_contrast, 0.0f, 
+                                                                        DWRITE_PIXEL_GEOMETRY_FLAT, DWRITE_RENDERING_MODE_GDI_NATURAL, DWRITE_GRID_FIT_MODE_ENABLED,
+                                                                        (IDWriteRenderingParams2**)&font_dwrite_state.rendering_params);
+	
+	// create gdi interop
+	hr = font_dwrite_state.dwrite_factory2->GetGdiInterop(&font_dwrite_state.gdi_interop);
+    
+}
 
-function font_handle_t
+function void
+font_release() {
+    
+    // release dwrite
+	if (font_dwrite_state.gdi_interop != nullptr) { font_dwrite_state.gdi_interop->Release();  font_dwrite_state.gdi_interop = nullptr; }
+	if (font_dwrite_state.rendering_params != nullptr) { font_dwrite_state.rendering_params->Release(); font_dwrite_state.rendering_params = nullptr; }
+	if (font_dwrite_state.dwrite_factory2 != nullptr) { font_dwrite_state.dwrite_factory2->Release(); font_dwrite_state.dwrite_factory2 = nullptr; }
+    
+	// release arenas
+	arena_release(font_dwrite_state.arena);
+    
+    _font_core_release();
+}
+
+function void
+font_reset() {
+    _font_core_reset();
+}
+
+//- font functions
+
+function font_t
 font_open(str_t filepath) {
     
 	temp_t scratch = scratch_begin();
@@ -21,7 +71,7 @@ font_open(str_t filepath) {
 	if (font != nullptr) {
 		font = stack_pop(font_dwrite_state.font_free);
 	} else {
-		font = (font_dwrite_font_t*)arena_alloc(font_dwrite_state.font_arena, sizeof(font_dwrite_font_t));
+		font = (font_dwrite_font_t*)arena_alloc(font_dwrite_state.arena, sizeof(font_dwrite_font_t));
 	}
 	memset(font, 0, sizeof(font_dwrite_font_t));
 	dll_push_back(font_dwrite_state.font_first, font_dwrite_state.font_last, font);
@@ -38,15 +88,14 @@ font_open(str_t filepath) {
     
 	scratch_end(scratch);
     
-	font_handle_t handle = { (u64)font };
-	return handle;
+	font_t font_handle = { (u64)font };
+	return font_handle;
 }
 
 function void
-font_close(font_handle_t font) {
+font_close(font_t font_handle) {
     
-	// get font 
-	font_dwrite_font_t* dwrite_font = (font_dwrite_font_t*)(font.data[0]);
+	font_dwrite_font_t* dwrite_font = (font_dwrite_font_t*)(font_handle.id);
     
 	// release dwrite
 	if (dwrite_font->face != nullptr) { dwrite_font->face->Release(); dwrite_font->face = nullptr; }
@@ -58,10 +107,9 @@ font_close(font_handle_t font) {
 }
 
 function font_metrics_t 
-font_get_metrics(font_handle_t font, f32 size) {
+font_get_metrics(font_t font_handle, f32 size) {
     
-	// get font 
-	font_dwrite_font_t* dwrite_font = (font_dwrite_font_t*)(font.data[0]);
+	font_dwrite_font_t* dwrite_font = (font_dwrite_font_t*)(font_handle.id);
     
 	DWRITE_FONT_METRICS metrics = { 0 };
 	dwrite_font->face->GetMetrics(&metrics);
@@ -80,10 +128,10 @@ font_get_metrics(font_handle_t font, f32 size) {
 }
 
 function font_raster_t 
-font_glyph_raster(arena_t* arena, font_handle_t font, f32 size, u32 codepoint) {
+font_glyph_raster(arena_t* arena, font_t font_handle, f32 size, u32 codepoint) {
     
 	// get font 
-	font_dwrite_font_t* dwrite_font = (font_dwrite_font_t*)(font.data[0]);
+	font_dwrite_font_t* dwrite_font = (font_dwrite_font_t*)(font_handle.id);
     
 	// get font metrics
 	DWRITE_FONT_METRICS font_metrics = { 0 };
@@ -165,46 +213,9 @@ font_glyph_raster(arena_t* arena, font_handle_t font, f32 size, u32 codepoint) {
 	return raster;
 }
 
-// dwrite specific functions
+//- dwrite specific functions
 
-function void 
-font_dwrite_init() {
-    
-	// allocate arenas
-	font_dwrite_state.font_arena = arena_create(megabytes(64));
-    
-	HRESULT hr = 0;
-    
-	// create dwrite factory
-	hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory2), (IUnknown**)&font_dwrite_state.dwrite_factory2);
-	
-	// create rendering params
-	hr = font_dwrite_state.dwrite_factory2->CreateRenderingParams(&font_dwrite_state.rendering_params);
-	
-	f32 gamma = font_dwrite_state.rendering_params->GetGamma();
-	f32 enhanced_contrast = font_dwrite_state.rendering_params->GetEnhancedContrast();
-	f32 clear_type_level = font_dwrite_state.rendering_params->GetClearTypeLevel();
-	
-    hr = font_dwrite_state.dwrite_factory2->CreateCustomRenderingParams(gamma, enhanced_contrast, enhanced_contrast, 0.0f, 
-                                                                        DWRITE_PIXEL_GEOMETRY_FLAT, DWRITE_RENDERING_MODE_GDI_NATURAL, DWRITE_GRID_FIT_MODE_ENABLED,
-                                                                        (IDWriteRenderingParams2**)&font_dwrite_state.rendering_params);
-	
-	// create gdi interop
-	hr = font_dwrite_state.dwrite_factory2->GetGdiInterop(&font_dwrite_state.gdi_interop);
-	
-}
 
-function void 
-font_dwrite_release() {
-    
-	// release dwrite
-	if (font_dwrite_state.gdi_interop != nullptr) { font_dwrite_state.gdi_interop->Release();  font_dwrite_state.gdi_interop = nullptr; }
-	if (font_dwrite_state.rendering_params != nullptr) { font_dwrite_state.rendering_params->Release(); font_dwrite_state.rendering_params = nullptr; }
-	if (font_dwrite_state.dwrite_factory2 != nullptr) { font_dwrite_state.dwrite_factory2->Release(); font_dwrite_state.dwrite_factory2 = nullptr; }
-    
-	// release arenas
-	arena_release(font_dwrite_state.font_arena);
-}
 
 
 #endif // SORA_FONT_DWRITE_CPP

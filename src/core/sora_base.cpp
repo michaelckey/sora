@@ -5,63 +5,48 @@
 
 //~ implementation
 
-//- entry point (defined by user)
-i32 app_entry_point(i32 argc, char** argv);
+//- entry point
 
-#if BUILD_DEBUG
-int main(int argc, char** argv) {
+// NOTE: to be defined by user.
+function i32 app_entry_point(i32 argc, char** argv);
+
+// NOTE: internal entry point
+function i32 
+_entry_point(i32 argc, char** argv) {
     thread_context_create();
     i32 result = app_entry_point(argc, argv);
     thread_context_release();
-	return result;
+    return result;
 }
+
+// NOTE: compiler entry point
+#if BUILD_DEBUG
+
+// call into default main to include console.
+int main(int argc, char** argv) {
+    return _entry_point(argc, argv);
+}
+
 #elif BUILD_RELEASE
 
+// on release we don't want the console
 #    if OS_BACKEND_WIN32
 int WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd) {
-    thread_context_create();
-    i32 result = app_entry_point(__argc, __argv);
-    thread_context_release();
-	return result;
+    return _entry_point(__argc, __argv);
 }
-#    endif // OS_BACKEND_WIN32
+#    elif OS_BACKEND_LINUX
+// not implemented
+#    elif OS_BACKEND_MACOS
+// not implemented
+#    endif 
+#endif
 
-#endif // BUILD_RELEASE
-
-//- memory 
-
-#if !defined(os_mem_reserve)
-#    include <stdlib.h> // malloc
-#    define os_mem_reserve(size) os_base_mem_reserve(size)
-#    define os_mem_release(ptr, size) os_base_mem_release(ptr, size)
-#    define os_mem_commit(ptr, size) os_base_mem_commit(ptr, size)
-#    define os_mem_decommit(ptr, size) os_base_mem_decommit(ptr, size)
-#endif 
-
-function void*
-os_base_mem_reserve(u64 size) {
-    return malloc(size);
-}
-
-function void
-os_base_mem_release(void* ptr, u64 size) {
-    free(ptr);
-}
-
-function void
-os_base_mem_commit(void* ptr, u64 size) {
-    // no op
-}
-
-function void
-os_base_mem_decommit(void* ptr, u64 size) {
-    // no op
-}
-
-//- arenas
+//- arena functions
 
 function arena_t*
 arena_create(u64 size) {
+    
+    arena_t* arena = nullptr;
     
 	// roundup
 	u64 size_roundup = megabytes(64);
@@ -71,18 +56,23 @@ arena_create(u64 size) {
 	// reserve memory
 	void* block = os_mem_reserve(size);
     
-	// initial commit
-	u64 initial_commit_size = arena_commit_size;
-	os_mem_commit(block, initial_commit_size);
+    if (block != nullptr) {
+        // initial commit
+        u64 initial_commit_size = arena_commit_size;
+        os_mem_commit(block, initial_commit_size);
+        
+        // fill struct
+        arena = (arena_t*)block;
+        arena->pos = sizeof(arena_t);
+        arena->commit_pos = initial_commit_size;
+        arena->align = 8;
+        arena->size = size;
+        
+    } else {
+        log_errorf("failed to reserve memory for arena!");
+    }
     
-	// fill struct
-	arena_t* arena = (arena_t*)block;
-	arena->pos = sizeof(arena_t);
-	arena->commit_pos = initial_commit_size;
-	arena->align = 8;
-	arena->size = size;
-    
-	return arena;
+    return arena;
 }
 
 function arena_t* 
@@ -99,11 +89,9 @@ arena_release(arena_t* arena) {
 
 function void*
 arena_alloc(arena_t* arena, u64 size) {
-    void* result = nullptr;
     
-	if (arena == nullptr) {
-        log_errorf("arena %p was not initialized!", arena);
-	} else {
+    void* result = nullptr;
+	if (arena != nullptr) {
         
         if (arena->pos + size <= arena->size) {
             
@@ -128,7 +116,8 @@ arena_alloc(arena_t* arena, u64 size) {
         } else {
             log_errorf("arena %p is full!", arena);
         }
-        
+	} else {
+        log_errorf("arena %p was not initialized!", arena);
     }
     
 	return result;
@@ -216,7 +205,6 @@ thread_context_get_scratch() {
 
 //- char functions
 
-
 function b8
 char_is_whitespace(char c) {
 	return (c == ' ' || c == '\t' || c == '\v' || c == '\f');
@@ -291,7 +279,7 @@ cstr_equals(cstr cstr1, cstr cstr2) {
 	return (*(const unsigned char*)cstr1 - *(const unsigned char*)cstr2) == 0;
 }
 
-// unicode
+//- unicode functions
 
 function codepoint_t 
 utf8_decode(u8* data, u32 max) {
@@ -408,30 +396,30 @@ utf16_encode(u16* out, codepoint_t codepoint) {
 	return advance;
 }
 
-// str functions
+//- str functions
 
 function str_t 
-str(char* cstr) {
-	str_t string;
-	string.data = (u8*)cstr;
-	string.size = cstr_length(cstr);
-	return string;
+str(char* string) {
+	str_t result;
+	result.data = (u8*)string;
+	result.size = cstr_length(string);
+	return result;
 }
 
 function str_t
-str(cstr cstr) {
-	str_t string;
-	string.data = (u8*)cstr;
-	string.size = cstr_length(cstr);
-	return string;
+str(cstr string) {
+	str_t result;
+	result.data = (u8*)string;
+	result.size = cstr_length(string);
+	return result;
 }
 
 function str_t
-str(char* cstr, u32 size) {
-	str_t string;
-	string.data = (u8*)cstr;
-	string.size = size;
-	return string;
+str(char* string, u32 size) {
+	str_t result;
+	result.data = (u8*)string;
+	result.size = size;
+	return result;
 }
 
 function str_t 
@@ -470,147 +458,6 @@ str_range(u8* first, u8* last) {
 	return result;
 }
 
-function str_t
-str_skip(str_t string, u32 min) {
-	return str_substr(string, min, string.size);
-}
-
-function str_t
-str_chop(str_t string, u32 max) {
-	return str_substr(string, 0, string.size - max);
-}
-
-function str_t
-str_prefix(str_t string, u32 size) {
-	return str_substr(string, 0, size);
-}
-
-function str_t
-str_suffix(str_t string, u32 size) {
-	return str_substr(string, string.size - size, string.size);
-}
-
-function b8
-str_match(str_t a, str_t b, str_match_flags flags = 0) {
-	b8 result = 0;
-    
-	if (a.size == b.size || flags & str_match_flag_right_side_sloppy) {
-		result = 1;
-		for (u32 i = 0; i < a.size; i++) {
-			b8 match = (a.data[i] == b.data[i]);
-            
-			if (flags & str_match_flag_case_insensitive) {
-				match |= (char_to_lower(a.data[i]) == char_to_lower(b.data[i]));
-			}
-            
-			if (flags & str_match_flag_slash_insensitive) {
-				match |= (char_to_forward_slash(a.data[i]) == char_to_forward_slash(b.data[i]));
-			}
-            
-			if (match == 0) {
-				result = 0;
-				break;
-			}
-		}
-	}
-	return result;
-}
-
-function u32
-str_find_substr(str_t haystack, str_t needle, u32 start_pos = 0, str_match_flags flags = 0) {
-	b8 found = 0;
-	u32 found_idx = haystack.size;
-	for (u32 i = start_pos; i < haystack.size; i++) {
-		if (i + needle.size <= haystack.size) {
-			str_t substr = str_substr(haystack, i, i + needle.size);
-			if (str_match(substr, needle, flags)) {
-				found_idx = i;
-				found = 1;
-				if (!(flags & str_match_flag_find_last)) {
-					break;
-				}
-			}
-		}
-	}
-	return found_idx;
-}
-
-function str_t 
-str_get_file_name(str_t string) {
-    
-	u32 slash_pos = str_find_substr(string, str("/"), 0, str_match_flag_case_insensitive | str_match_flag_find_last);
-	if (slash_pos < string.size) {
-		string.data += slash_pos + 1;
-		string.size -= slash_pos + 1;
-	}
-	
-	u32 period_pos = str_find_substr(string, str("."), 0, str_match_flag_find_last);
-	if (period_pos < string.size) {
-		string.size = period_pos;
-	}
-    
-	return string;
-}
-
-function str_t 
-str_get_file_extension(str_t string) {
-    
-	u32 period_pos = str_find_substr(string, str("."), 0, str_match_flag_find_last);
-	if (period_pos < string.size) {
-		string.data += period_pos + 1;
-		string.size -= period_pos + 1;
-	}
-    
-	return string;
-}
-
-function str_t
-str_formatv(arena_t* arena, char* fmt, va_list args) {
-	str_t result = { 0 };
-	va_list args2;
-	va_copy(args2, args);
-	u32 needed_bytes = vsnprintf(0, 0, fmt, args) + 1;
-	result.data = (u8*)arena_alloc(arena, sizeof(u8) * needed_bytes);
-	result.size = needed_bytes - 1;
-	vsnprintf((char*)result.data, needed_bytes, fmt, args2);
-	return result;
-}
-
-function str_t
-str_format(arena_t* arena, char* fmt, ...) {
-	str_t result = { 0 };
-	va_list args;
-	va_start(args, fmt);
-	result = str_formatv(arena, fmt, args);
-	va_end(args);
-	return result;
-}
-
-function void
-str_scan(str_t string, char* fmt, ...) {
-	va_list args;
-	va_start(args, fmt);
-	vsscanf((char*)string.data, fmt, args);
-	va_end(args);
-}
-
-function u32 
-str_find_word_index(str_t string, u32 start_index, i32 dir) {
-    
-    u32 result = start_index;
-    
-    if (dir > 0) {
-        while (result < string.size && !char_is_whitespace(string.data[result])) { result++; }
-        while (result < string.size && char_is_whitespace(string.data[result])) { result++; }
-    } else {
-        result--;
-        while (result > 0 && char_is_whitespace(string.data[result])) { result--; }
-        while (result > 0 && !char_is_whitespace(string.data[result - 1])) { result--; }
-    }
-    
-    return result;
-    
-}
 
 function str_t 
 str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace) {
@@ -641,6 +488,88 @@ str_replace_range(arena_t* arena, str_t string, ivec2_t range, str_t replace) {
     str_t result = str((char*)base, new_size);
     
     return result;
+}
+
+function str_t
+str_skip(str_t string, u32 min) {
+	return str_substr(string, min, string.size);
+}
+
+function str_t
+str_chop(str_t string, u32 max) {
+	return str_substr(string, 0, string.size - max);
+}
+
+function str_t
+str_prefix(str_t string, u32 size) {
+	return str_substr(string, 0, size);
+}
+
+function str_t
+str_suffix(str_t string, u32 size) {
+	return str_substr(string, string.size - size, string.size);
+}
+
+function b8
+str_equals(str_t a, str_t b, str_equal_flags flags = 0) {
+	b8 result = 0;
+    
+	if (a.size == b.size || flags & str_equal_flag_right_side_sloppy) {
+		result = 1;
+		for (u32 i = 0; i < a.size; i++) {
+			b8 equal = (a.data[i] == b.data[i]);
+            
+			if (flags & str_equal_flag_case_insensitive) {
+				equal |= (char_to_lower(a.data[i]) == char_to_lower(b.data[i]));
+			}
+            
+			if (flags & str_equal_flag_slash_insensitive) {
+				equal |= (char_to_forward_slash(a.data[i]) == char_to_forward_slash(b.data[i]));
+			}
+            
+			if (equal == 0) {
+				result = 0;
+				break;
+			}
+		}
+	}
+	return result;
+}
+
+function u32
+str_find_substr(str_t haystack, str_t needle, u32 start_pos = 0, str_equal_flags flags = 0) {
+	b8 found = 0;
+	u32 found_idx = haystack.size;
+	for (u32 i = start_pos; i < haystack.size; i++) {
+		if (i + needle.size <= haystack.size) {
+			str_t substr = str_substr(haystack, i, i + needle.size);
+			if (str_equals(substr, needle, flags)) {
+				found_idx = i;
+				found = 1;
+				if (!(flags & str_equal_flag_find_last)) {
+					break;
+				}
+			}
+		}
+	}
+	return found_idx;
+}
+
+function u32 
+str_find_word_index(str_t string, u32 start_index, i32 dir) {
+    
+    u32 result = start_index;
+    
+    if (dir > 0) {
+        while (result < string.size && !char_is_whitespace(string.data[result])) { result++; }
+        while (result < string.size && char_is_whitespace(string.data[result])) { result++; }
+    } else {
+        result--;
+        while (result > 0 && char_is_whitespace(string.data[result])) { result--; }
+        while (result > 0 && !char_is_whitespace(string.data[result - 1])) { result--; }
+    }
+    
+    return result;
     
 }
 
@@ -655,8 +584,86 @@ str_hash(u64 seed, str_t string) {
     return result;
 }
 
+function void
+str_scan(str_t string, char* fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	vsscanf((char*)string.data, fmt, args);
+	va_end(args);
+}
 
-//- str list
+function str_t 
+str_get_file_name(str_t string) {
+    
+	u32 slash_pos = str_find_substr(string, str("/"), 0, str_equal_flag_case_insensitive | str_equal_flag_find_last);
+	if (slash_pos < string.size) {
+		string.data += slash_pos + 1;
+		string.size -= slash_pos + 1;
+	}
+	
+	u32 period_pos = str_find_substr(string, str("."), 0, str_equal_flag_find_last);
+	if (period_pos < string.size) {
+		string.size = period_pos;
+	}
+    
+	return string;
+}
+
+function str_t 
+str_get_file_extension(str_t string) {
+    
+	u32 period_pos = str_find_substr(string, str("."), 0, str_equal_flag_find_last);
+	if (period_pos < string.size) {
+		string.data += period_pos + 1;
+		string.size -= period_pos + 1;
+	}
+    
+	return string;
+}
+
+
+//- str format helper functions
+
+function str_t
+str_formatv(arena_t* arena, char* fmt, va_list args) {
+	str_t result = { 0 };
+	va_list args2;
+	va_copy(args2, args);
+	u32 needed_bytes = vsnprintf(0, 0, fmt, args) + 1;
+	result.data = (u8*)arena_alloc(arena, sizeof(u8) * needed_bytes);
+	result.size = needed_bytes - 1;
+	vsnprintf((char*)result.data, needed_bytes, fmt, args2);
+	return result;
+}
+
+function str_t
+str_format(arena_t* arena, char* fmt, ...) {
+	str_t result = { 0 };
+	va_list args;
+	va_start(args, fmt);
+	result = str_formatv(arena, fmt, args);
+	va_end(args);
+	return result;
+}
+
+function str_t 
+str_format_bytes(arena_t* arena, u64 byte_count) {
+    const char* units[] = { "B", "KB", "MB", "GB", "TB" };
+    const i32 num_units = array_count(units);
+    
+    // determine unit suffix
+    f64 size = (f64)byte_count;
+    i32 unit_index = 0;
+    while (size > 1024.0 && unit_index < num_units - 1) {
+        size /= 1024.0;
+        unit_index++;
+    }
+    
+    str_t byte_string = str_format(arena, "%.1f %s", size, units[unit_index]);
+    return byte_string;
+}
+
+//- str list functions
 
 function void
 str_list_push_node(str_list_t* list, str_node_t* node) {
@@ -752,7 +759,7 @@ str16(u16* data, u32 size) {
 	return result;
 }
 
-//- string conversions
+//- string conversion functions
 
 function str_t
 str_from_str16(arena_t* arena, str16_t string) {
@@ -806,7 +813,7 @@ str16_from_str(arena_t* arena, str_t string) {
     
 }
 
-//- number/string conversions
+//- number/string conversion functions
 
 function f32
 f32_from_str(str_t string) {
@@ -864,7 +871,7 @@ i32_from_str(str_t string) {
 }
 
 
-//- fuzzy matching 
+//- fuzzy matching functions
 
 function fuzzy_match_list_t 
 str_fuzzy_match_find(arena_t* arena, str_t needle, str_t haystack) {
@@ -878,7 +885,7 @@ str_fuzzy_match_find(arena_t* arena, str_t needle, str_t haystack) {
         u32 find_pos = 0;
         for (;find_pos < haystack.size;) {
             
-            find_pos = str_find_substr(haystack, n->string, find_pos, str_match_flag_case_insensitive);
+            find_pos = str_find_substr(haystack, n->string, find_pos, str_equal_flag_case_insensitive);
             
             b8 is_in_gathered_ranges = false;
             for (fuzzy_match_node_t* match_node = result.first; match_node != nullptr; match_node = match_node->next) {
@@ -903,17 +910,15 @@ str_fuzzy_match_find(arena_t* arena, str_t needle, str_t haystack) {
             
             queue_push(result.first, result.last, node);
             result.count++;
-            
         }
         
     }
-    
     
     scratch_end(scratch);
     return result;
 }
 
-//- time
+//- time functions
 
 function date_time_t 
 date_time_from_dense_time(u64 densetime) {
@@ -980,7 +985,7 @@ date_time_from_microseconds(u64 microseconds) {
     return result;
 }
 
-//- random
+//- random functions
 
 function void
 random_seed(u32 seed) {
@@ -1013,16 +1018,16 @@ random_f32_range(f32 min_value, f32 max_value) {
 	return min_value + random_f32() * (max_value - min_value);
 }
 
-//- math
+//- math functions
 
 inlnfunc f32
-radians(f32 degrees) {
-	return degrees * 0.0174533f;
+radians(f32 deg) {
+	return deg * 0.0174533f;
 }
 
 inlnfunc f32
-degrees(f32 radians) {
-	return radians * 57.2958f;
+degrees(f32 rad) {
+	return rad * 57.2958f;
 }
 
 inlnfunc f32
@@ -1048,15 +1053,7 @@ sign(f32 v) {
     return (v > 0.0f) - (v < 0.0f);
 }
 
-//- vec2 
-
-inlnfunc vec2_t
-vec2(f32 v = 0.0f) {
-	vec2_t result;
-	result.x = v;
-	result.y = v;
-	return result;
-}
+//- vec2 functions
 
 inlnfunc vec2_t
 vec2(f32 x, f32 y) {
@@ -1065,6 +1062,15 @@ vec2(f32 x, f32 y) {
 	result.y = y;
 	return result;
 }
+
+inlnfunc vec2_t
+vec2(f32 v) {
+	vec2_t result;
+	result.x = v;
+	result.y = v;
+	return result;
+}
+
 
 inlnfunc vec2_t
 vec2_add(vec2_t a, vec2_t b) {
@@ -1193,10 +1199,10 @@ vec2_lerp(vec2_t a, vec2_t b, f32 t) {
 	return vec2_add(vec2_mul(a, 1.0f - t), vec2_mul(b, t));
 }
 
-//- ivec2
+//- ivec2 functions
 
 inlnfunc ivec2_t 
-ivec2(i32 v = 0) {
+ivec2(i32 v) {
 	return { v, v };
 }
 
@@ -1210,10 +1216,74 @@ ivec2_equals(ivec2_t a, ivec2_t b) {
 	return ((a.x == b.x) && (a.y == b.y));
 }
 
-//- uvec2
+inlnfunc ivec2_t
+ivec2_add(ivec2_t a, ivec2_t b) {
+    ivec2_t result;
+    result.x = a.x + b.x;
+    result.y = a.y + b.y;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_add(ivec2_t a, i32 b) {
+    ivec2_t result;
+    result.x = a.x + b;
+    result.y = a.y + b;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_sub(ivec2_t a, ivec2_t b) {
+    ivec2_t result;
+    result.x = a.x - b.x;
+    result.y = a.y - b.y;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_sub(ivec2_t a, i32 b) {
+    ivec2_t result;
+    result.x = a.x - b;
+    result.y = a.y - b;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_mul(ivec2_t a, ivec2_t b) {
+    ivec2_t result;
+    result.x = a.x * b.x;
+    result.y = a.y * b.y;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_mul(ivec2_t a, i32 b) {
+    ivec2_t result;
+    result.x = a.x * b;
+    result.y = a.y * b;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_div(ivec2_t a, ivec2_t b) {
+    ivec2_t result;
+    result.x = a.x / b.x;
+    result.y = a.y / b.y;
+    return result;
+}
+
+inlnfunc ivec2_t
+ivec2_div(ivec2_t a, i32 b) {
+    ivec2_t result;
+    result.x = a.x / b;
+    result.y = a.y / b;
+    return result;
+}
+
+//- uvec2 functions
 
 inlnfunc uvec2_t 
-uvec2(u32 v = 0) {
+uvec2(u32 v) {
 	return { v, v };
 }
 
@@ -1227,16 +1297,71 @@ uvec2_equals(uvec2_t a, uvec2_t b) {
 	return ((a.x == b.x) && (a.y == b.y));
 }
 
-//- vec3
-
-inlnfunc vec3_t
-vec3(f32 v = 0.0f) {
-	vec3_t result;
-	result.x = v;
-	result.y = v;
-	result.z = v;
-	return result;
+inlnfunc uvec2_t
+uvec2_add(uvec2_t a, uvec2_t b) {
+    uvec2_t result;
+    result.x = a.x + b.x;
+    result.y = a.y + b.y;
+    return result;
 }
+
+inlnfunc uvec2_t
+uvec2_add(uvec2_t a, u32 b) {
+    uvec2_t result;
+    result.x = a.x + b;
+    result.y = a.y + b;
+    return result;
+}
+
+inlnfunc uvec2_t
+uvec2_sub(uvec2_t a, uvec2_t b) {
+    uvec2_t result;
+    result.x = a.x - b.x;
+    result.y = a.y - b.y;
+    return result;
+}
+
+inlnfunc uvec2_t
+uvec2_sub(uvec2_t a, u32 b) {
+    uvec2_t result;
+    result.x = a.x - b;
+    result.y = a.y - b;
+    return result;
+}
+
+inlnfunc uvec2_t
+uvec2_mul(uvec2_t a, uvec2_t b) {
+    uvec2_t result;
+    result.x = a.x * b.x;
+    result.y = a.y * b.y;
+    return result;
+}
+
+inlnfunc uvec2_t
+uvec2_mul(uvec2_t a, u32 b) {
+    uvec2_t result;
+    result.x = a.x * b;
+    result.y = a.y * b;
+    return result;
+}
+
+inlnfunc uvec2_t
+uvec2_div(uvec2_t a, uvec2_t b) {
+    uvec2_t result;
+    result.x = a.x / b.x;
+    result.y = a.y / b.y;
+    return result;
+}
+
+inlnfunc uvec2_t
+uvec2_div(uvec2_t a, u32 b) {
+    uvec2_t result;
+    result.x = a.x / b;
+    result.y = a.y / b;
+    return result;
+}
+
+//- vec3 functions
 
 inlnfunc vec3_t
 vec3(f32 x, f32 y, f32 z) {
@@ -1248,10 +1373,27 @@ vec3(f32 x, f32 y, f32 z) {
 }
 
 inlnfunc vec3_t
-vec3(vec2_t xy, f32 z = 0.0f) {
+vec3(f32 v) {
+	vec3_t result;
+	result.x = v;
+	result.y = v;
+	result.z = v;
+	return result;
+}
+
+inlnfunc vec3_t
+vec3(vec2_t xy, f32 z) {
 	vec3_t result;
 	result.xy = xy;
 	result.z = z;
+	return result;
+}
+
+inlnfunc vec3_t
+vec3(f32 x, vec2_t yz) {
+	vec3_t result;
+	result.x = x;
+	result.yz = yz;
 	return result;
 }
 

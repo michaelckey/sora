@@ -3,14 +3,10 @@
 #ifndef SORA_FONT_H
 #define SORA_FONT_H
 
-//- defines 
+//~ structs
 
-#define font_atlas_size 2048.0f
-
-//- structs
-
-struct font_handle_t {
-	u64 data[1];
+struct font_t {
+    u64 id;
 };
 
 struct font_metrics_t {
@@ -48,11 +44,10 @@ struct font_atlas_node_t {
 	b8 taken;
 };
 
-struct font_state_t {
+struct font_core_state_t {
     
 	// arena
-	arena_t* atlas_arena;
-	arena_t* glyph_arena;
+	arena_t* arena;
     
 	// glyph list
 	font_glyph_t* glyph_first;
@@ -61,42 +56,53 @@ struct font_state_t {
 	// atlas
 	vec2_t root_size;
 	font_atlas_node_t* root;
-	gfx_handle_t atlas_texture;
+    
+    uvec2_t atlas_size;
+	gfx_texture_t atlas_texture;
 };
 
-//- globals
+//~ globals
 
-global font_state_t font_state;
+global font_core_state_t font_core_state;
 
-//- functions
+//~ functions
 
-// state
-function void font_init();
-function void font_release();
-function void font_reset();
+//- state (implemented per backend)
 
-// handles
-function b8 font_handle_equals(font_handle_t a, font_handle_t b);
+function void            font_init();
+function void            font_release();
+function void            font_reset();
 
-// interface (implemented per backend)
-function font_handle_t  font_open(str_t filepath);
-function void           font_close(font_handle_t font);
-function font_metrics_t font_get_metrics(font_handle_t font, f32 size);
-function font_raster_t  font_glyph_raster(arena_t* arena, font_handle_t font, f32 size, u32 codepoint);
+//- handles (implemented once)
 
-// interface (implemented once)
-function font_glyph_t* font_get_glyph(font_handle_t font, f32 size, u32 codepoint);
-function f32           font_text_get_width(font_handle_t font, f32 size, str_t string);
-function f32           font_text_get_height(font_handle_t font, f32 size, str_t string);
-function vec2_t        font_align(str_t text, font_handle_t font, f32 size, rect_t rect);
+function b8              font_equals(font_t a, font_t b);
 
-function str_t font_text_truncate(arena_t* arena, font_handle_t font, f32 font_size, str_t string, f32 max_width, str_t trail_string);
+//- interface (implemented per backend)
 
-// helpers
-function u32    font_glyph_hash(font_handle_t, f32, u32);
-function vec2_t font_atlas_add(vec2_t);
+function font_t          font_open(str_t filepath);
+function void            font_close(font_t font_handle);
+function font_metrics_t  font_get_metrics(font_t font_handle, f32 size);
+function font_raster_t   font_glyph_raster(arena_t* arena, font_t font_handle, f32 size, u32 codepoint);
 
-//- per backend incldues 
+//- interface (implemented once)
+
+function font_glyph_t*   font_get_glyph(font_t font_handle, f32 size, u32 codepoint);
+function f32             font_text_get_width(font_t font_handle, f32 size, str_t string);
+function f32             font_text_get_height(font_t font_handle, f32 size, str_t string);
+function vec2_t          font_align(str_t text, font_t font_handle, f32 size, rect_t rect);
+
+//function str_t           font_text_truncate(arena_t* arena, font_t font, f32 font_size, str_t string, f32 max_width, str_t trail_string);
+
+//- internal core state (implemented once)
+
+function void            _font_core_init();
+function void            _font_core_release();
+function void            _font_core_reset();
+
+function u32             _font_glyph_hash(font_t font_handle, f32 size, u32 codepoint);
+function vec2_t          _font_atlas_add(vec2_t needed_size);
+
+//~ per backend includes 
 
 #if OS_BACKEND_WIN32
 #    if !defined(FNT_BACKEND_DWRITE) && !defined(FNT_BACKEND_FREETYPE)
@@ -113,11 +119,13 @@ function vec2_t font_atlas_add(vec2_t);
 #endif 
 
 #if FNT_BACKEND_DWRITE
-#include "backends/font/sora_font_dwrite.h"
+#    include "backends/font/sora_font_dwrite.h"
 #elif FNT_BACKEND_CORE_TEXT
-// not implemented
+#    error font backend not implemented.
 #elif FNT_BACKEND_FREETYPE
-// not implemented
+#    error font backend not implemented.
+#else
+#    error undefined font backend.
 #endif 
 
 #endif // SORA_FONT_H

@@ -3,12 +3,11 @@
 #ifndef SORA_FONT_DWRITE_H
 #define SORA_FONT_DWRITE_H
 
-// includes
+//~ includes
 
-//#include <dwrite.h>
 #include <dwrite_2.h>
 
-// structs
+//~ structs
 
 struct font_dwrite_font_t {
 	font_dwrite_font_t* next;
@@ -21,10 +20,9 @@ struct font_dwrite_font_t {
 struct font_dwrite_state_t {
     
 	// arena
-	arena_t* font_arena;
+	arena_t* arena;
 	
 	// dwrite
-	//IDWriteFactory* dwrite_factory;
 	IDWriteFactory2* dwrite_factory2;
 	IDWriteRenderingParams* rendering_params;
 	IDWriteGdiInterop* gdi_interop;
@@ -36,13 +34,12 @@ struct font_dwrite_state_t {
 	
 };
 
-// globals
+//~ globals
 
 global font_dwrite_state_t font_dwrite_state;
 
-// dwrite specific functions
+//~ dwrite specific functions
 
-function void font_dwrite_init();
-function void font_dwrite_release();
+
 
 #endif // SORA_FONT_DWRITE

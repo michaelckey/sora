@@ -3,103 +3,79 @@
 #ifndef SORA_FONT_CPP
 #define SORA_FONT_CPP
 
-// implementation
+//~ implementation
 
-// state
+//- core state functions
 
 function void
-font_init() {
+_font_core_init() {
     
-	font_state.atlas_arena = arena_create(megabytes(128));
-	font_state.glyph_arena = arena_create(megabytes(128));
+	font_core_state.arena = arena_create(megabytes(256));
     
-	// glyph cache
-	font_state.glyph_first = nullptr;
-	font_state.glyph_last = nullptr;
-    
-	// atlas nodes
-	font_state.root_size = vec2(font_atlas_size, font_atlas_size);
-	font_state.root = (font_atlas_node_t*)arena_alloc(font_state.atlas_arena, sizeof(font_atlas_node_t));
-	font_state.root->max_free_size[0] = vec2_mul(font_state.root_size, 0.5f);
-	font_state.root->max_free_size[1] = vec2_mul(font_state.root_size, 0.5f);
-	font_state.root->max_free_size[2] = vec2_mul(font_state.root_size, 0.5f);
-	font_state.root->max_free_size[3] = vec2_mul(font_state.root_size, 0.5f);
+    font_core_state.atlas_size = uvec2(2048, 2048);
+	
+    // atlas nodes
+	font_core_state.root_size = vec2((f32)font_core_state.atlas_size.x, (f32)font_core_state.atlas_size.y);
+	font_core_state.root = (font_atlas_node_t*)arena_alloc(font_core_state.arena, sizeof(font_atlas_node_t));
+	font_core_state.root->max_free_size[0] = vec2_mul(font_core_state.root_size, 0.5f);
+	font_core_state.root->max_free_size[1] = vec2_mul(font_core_state.root_size, 0.5f);
+	font_core_state.root->max_free_size[2] = vec2_mul(font_core_state.root_size, 0.5f);
+	font_core_state.root->max_free_size[3] = vec2_mul(font_core_state.root_size, 0.5f);
     
 	// atlas texture
-	font_state.atlas_texture = gfx_texture_create(uvec2((u32)font_atlas_size, (u32)font_atlas_size));
+	//font_core_state.atlas_texture = gfx_texture_create(font_core_state.atlas_size);
 	
-	// init backend
-#if FNT_BACKEND_DWRITE
-	font_dwrite_init();
-#elif FNT_BACKEND_CORE_TEXT
-	//font_core_text_init();
-#elif FNT_BACKEND_FREETYPE
-	//font_freetype_init();
-#endif
-    
 }
 
 function void
-font_release() {
+_font_core_release() {
     
 	// release assets
-	gfx_texture_release(font_state.atlas_texture);
+	//gfx_texture_release(font_core_state.atlas_texture);
     
-	// release arenas
-	arena_release(font_state.atlas_arena);
-	arena_release(font_state.glyph_arena);
-    
-	// release backend
-#if FNT_BACKEND_DWRITE
-	font_dwrite_release();
-#elif FNT_BACKEND_CORE_TEXT
-	//font_core_text_release();
-#elif FNT_BACKEND_FREETYPE
-	//font_freetype_release();
-#endif
+	// release arena
+	arena_release(font_core_state.arena);
     
 }
 
 function void
-font_reset() {
+_font_core_reset() {
     
     // clear arenas
-    arena_clear(font_state.atlas_arena);
-	arena_clear(font_state.glyph_arena);
+    arena_clear(font_core_state.arena);
     
     // glyph cache
-	font_state.glyph_first = nullptr;
-	font_state.glyph_last = nullptr;
+	font_core_state.glyph_first = nullptr;
+	font_core_state.glyph_last = nullptr;
     
     // atlas nodes
-	font_state.root_size = vec2(font_atlas_size, font_atlas_size);
-	font_state.root = (font_atlas_node_t*)arena_calloc(font_state.atlas_arena, sizeof(font_atlas_node_t));
-	font_state.root->max_free_size[0] = vec2_mul(font_state.root_size, 0.5f);
-	font_state.root->max_free_size[1] = vec2_mul(font_state.root_size, 0.5f);
-	font_state.root->max_free_size[2] = vec2_mul(font_state.root_size, 0.5f);
-	font_state.root->max_free_size[3] = vec2_mul(font_state.root_size, 0.5f);
+	font_core_state.root = (font_atlas_node_t*)arena_calloc(font_core_state.arena, sizeof(font_atlas_node_t));
+	font_core_state.root->max_free_size[0] = vec2_mul(font_core_state.root_size, 0.5f);
+	font_core_state.root->max_free_size[1] = vec2_mul(font_core_state.root_size, 0.5f);
+	font_core_state.root->max_free_size[2] = vec2_mul(font_core_state.root_size, 0.5f);
+	font_core_state.root->max_free_size[3] = vec2_mul(font_core_state.root_size, 0.5f);
     
 }
 
-// handle functions
+//- handle functions
 
 function b8
-font_handle_equals(font_handle_t a, font_handle_t b) {
-	return (a.data[0] == b.data[0]);
+font_equals(font_t a, font_t b) {
+	return (a.id == b.id);
 }
 
-// interface functions
+//- interface functions
 
 function font_glyph_t*
-font_get_glyph(font_handle_t font, f32 size, u32 codepoint) {
+font_get_glyph(font_t font, f32 size, u32 codepoint) {
     
 	temp_t scratch = scratch_begin();
     
 	font_glyph_t* glyph = nullptr;
-	u32 hash = font_glyph_hash(font, size, codepoint);
+	u32 hash = _font_glyph_hash(font, size, codepoint);
     
 	// try to find glyph in cache
-	for (font_glyph_t* current = font_state.glyph_first; current != 0; current = current->next) {
+	for (font_glyph_t* current = font_core_state.glyph_first; current != 0; current = current->next) {
         
 		// we found a match
 		if (current->hash == hash) {
@@ -115,18 +91,21 @@ font_get_glyph(font_handle_t font, f32 size, u32 codepoint) {
 		font_raster_t raster = font_glyph_raster(scratch.arena, font, size, codepoint);
 		
 		// add to atlas
-		vec2_t atlas_glyph_pos = font_atlas_add(raster.size);
+		vec2_t atlas_glyph_pos = _font_atlas_add(raster.size);
 		vec2_t atlas_glyph_size = vec2_add(atlas_glyph_pos, raster.size);
 		rect_t region = { atlas_glyph_pos.x, atlas_glyph_pos.y, atlas_glyph_size.x, atlas_glyph_size.y };
-		gfx_texture_fill_region(font_state.atlas_texture, region, raster.data);
+		//gfx_texture_fill_region(font_core_state.atlas_texture, region, raster.data);
         
 		// add glyph to cache list
-		glyph = (font_glyph_t*)arena_calloc(font_state.glyph_arena, sizeof(font_glyph_t));
+		glyph = (font_glyph_t*)arena_calloc(font_core_state.arena, sizeof(font_glyph_t));
 		glyph->hash = hash;
 		glyph->advance = raster.advance;
 		glyph->pos = rect(0.0f, 0.0f, raster.size.x, raster.size.y);
-		glyph->uv = rect(region.x0 / font_atlas_size, region.y0 / font_atlas_size, region.x1 / font_atlas_size, region.y1 / font_atlas_size);
-		dll_push_back(font_state.glyph_first, font_state.glyph_last, glyph);
+		glyph->uv = rect(region.x0 / (f32)font_core_state.atlas_size.x, 
+                         region.y0 / (f32)font_core_state.atlas_size.y, 
+                         region.x1 / (f32)font_core_state.atlas_size.x,
+                         region.y1 / (f32)font_core_state.atlas_size.y);
+		dll_push_back(font_core_state.glyph_first, font_core_state.glyph_last, glyph);
         
 	}
     
@@ -136,7 +115,7 @@ font_get_glyph(font_handle_t font, f32 size, u32 codepoint) {
 }
 
 function f32 
-font_text_get_width(font_handle_t font, f32 size, str_t string) {
+font_text_get_width(font_t font, f32 size, str_t string) {
 	f32 width = 0.0f;
 	for (u32 offset = 0; offset < string.size; offset++) {
 		char c = *(string.data + offset);
@@ -147,7 +126,7 @@ font_text_get_width(font_handle_t font, f32 size, str_t string) {
 }
 
 function f32 
-font_text_get_height(font_handle_t font, f32 size, str_t string) {
+font_text_get_height(font_t font, f32 size, str_t string) {
 	font_metrics_t metrics = font_get_metrics(font, size);
 	f32 h = (metrics.ascent + metrics.descent);
 	return h;
@@ -155,7 +134,7 @@ font_text_get_height(font_handle_t font, f32 size, str_t string) {
 
 
 function vec2_t 
-font_align(str_t text, font_handle_t font, f32 size, rect_t rect) {
+font_align(str_t text, font_t font, f32 size, rect_t rect) {
     
     vec2_t result = { 0 };
     
@@ -171,56 +150,53 @@ font_align(str_t text, font_handle_t font, f32 size, rect_t rect) {
     return result;
 }
 
-// TODO: find better way to do this.
-function str_t 
-font_text_truncate(arena_t* arena, font_handle_t font, f32 font_size, str_t string, f32 max_width, str_t trail_string) {
-    
-	// TODO: clean up pass, try to get rid of alloc.
-    
-	// copy original string
-	char* buffer = (char*)arena_alloc(arena, sizeof(char) * string.size);
-	memcpy(buffer, string.data, string.size);
-	str_t result = { 0 };
-    
-	f32 trail_width = font_text_get_width(font, font_size, trail_string);
-    
-	f32 width = 0.0f;
-	i32 glyph_count = 0;
-	b8 trail_needed = false;
-    
-	for (; glyph_count < string.size; glyph_count++) {
-		char c = *(string.data + glyph_count);
-		font_glyph_t* glyph = font_get_glyph(font, font_size, (u8)c);
-		width += glyph->advance;
-        
-		if (width > max_width) {
-			trail_needed = true;
-			break;
-		}
-	}
-    
-	u32 needed_size = string.size;
-    
-	if (trail_needed) {
-		glyph_count -= trail_string.size;
-		needed_size = glyph_count + trail_string.size;
-		
-		// copy string
-		memcpy(buffer + glyph_count, trail_string.data, sizeof(char) * trail_string.size);
-		
-	}
-    
-	result = str(buffer, needed_size);
-    
-	return result;
-}
+//function str_t 
+//font_text_truncate(arena_t* arena, font_t font, f32 font_size, str_t string, f32 max_width, str_t trail_string) {
+//
+// copy original string
+//char* buffer = (char*)arena_alloc(arena, sizeof(char) * string.size);
+//memcpy(buffer, string.data, string.size);
+//str_t result = { 0 };
+//
+//f32 trail_width = font_text_get_width(font, font_size, trail_string);
+//
+//f32 width = 0.0f;
+//i32 glyph_count = 0;
+//b8 trail_needed = false;
+//
+//for (; glyph_count < string.size; glyph_count++) {
+//char c = *(string.data + glyph_count);
+//font_glyph_t* glyph = font_get_glyph(font, font_size, (u8)c);
+//width += glyph->advance;
+//
+//if (width > max_width) {
+//trail_needed = true;
+//break;
+//}
+//}
+//
+//u32 needed_size = string.size;
+//
+//if (trail_needed) {
+//glyph_count -= trail_string.size;
+//needed_size = glyph_count + trail_string.size;
+//
+// copy string
+//memcpy(buffer + glyph_count, trail_string.data, sizeof(char) * trail_string.size);
+//
+//}
+//
+//result = str(buffer, needed_size);
+//
+//return result;
+//}
 
-// helper functions
+//~ internal functions
 
 function u32
-font_glyph_hash(font_handle_t font, f32 size, u32 codepoint) {
+_font_glyph_hash(font_t font, f32 size, u32 codepoint) {
 	u32 hash = 2166136261u;
-	hash ^= font.data[0];
+	hash ^= font.id;
 	hash *= 16777619u;
 	hash ^= *(u32*)(&size);
 	hash *= 16777619u;
@@ -230,7 +206,7 @@ font_glyph_hash(font_handle_t font, f32 size, u32 codepoint) {
 }
 
 function vec2_t
-font_atlas_add(vec2_t needed_size) {
+_font_atlas_add(vec2_t needed_size) {
     
 	// find node with best-fit size
 	vec2_t region_p0 = { 0.0f, 0.0f };
@@ -239,7 +215,7 @@ font_atlas_add(vec2_t needed_size) {
 	font_atlas_node_t* node = nullptr;
 	i32 node_corner = -1;
     
-	vec2_t n_supported_size = font_state.root_size;
+	vec2_t n_supported_size = font_core_state.root_size;
     
 	const vec2_t corner_vertices[4] = {
 		vec2(0.0f, 0.0f),
@@ -248,7 +224,7 @@ font_atlas_add(vec2_t needed_size) {
 		vec2(1.0f, 1.0f),
 	};
     
-	for (font_atlas_node_t* n = font_state.root, *next = 0; n != 0; n = next, next = 0) {
+	for (font_atlas_node_t* n = font_core_state.root, *next = 0; n != 0; n = next, next = 0) {
         
 		if (n->taken) { break; }
         
@@ -265,7 +241,7 @@ font_atlas_add(vec2_t needed_size) {
 			for (i32 i = 0; i < 4; i++) {
                 
 				if (n->children[i] == 0) {
-					n->children[i] = (font_atlas_node_t*)arena_calloc(font_state.atlas_arena, sizeof(font_atlas_node_t));
+					n->children[i] = (font_atlas_node_t*)arena_calloc(font_core_state.arena, sizeof(font_atlas_node_t));
 					n->children[i]->parent = n;
 					n->children[i]->max_free_size[0] = vec2_mul(child_size, 0.5f);
 					n->children[i]->max_free_size[1] = vec2_mul(child_size, 0.5f);
@@ -333,15 +309,14 @@ font_atlas_add(vec2_t needed_size) {
     
 }
 
-// include backends
+//~ per backend includes
 
 #if FNT_BACKEND_DWRITE
-#include "backends/font/sora_font_dwrite.cpp"
-#elif
+#    include "backends/font/sora_font_dwrite.cpp"
+#elif FNT_BACKEND_CORE_TEXT
 // not implemented
 #elif FNT_BACKEND_FREETYPE
 // not implemented
 #endif 
-
 
 #endif // SORA_FONT_CPP
